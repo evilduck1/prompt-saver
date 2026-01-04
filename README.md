@@ -1,23 +1,21 @@
-# Prompt Saver Desktop (Tauri v2)
+# Prompt Saver
 
-External library file workflow + portable builds.
+A lightweight prompt library manager built for the Invoke community.
 
-## Install
+- Store prompts with optional images
+- Save/load an external library file
+- Export/Import backups independently of library saves
+- Designed to be portable (no install required if you distribute as a bundled app)
+
+## Development
+
+### Prerequisites
+- Node.js (LTS recommended)
+- Rust toolchain (via rustup)
+- Tauri prerequisites for your OS
+
+### Install & Run (dev)
 ```bash
 npm install
-```
-
-## Run
-```bash
 npm run tauri dev
-```
 
-## Build
-```bash
-npm run tauri build
-```
-
-## Behavior
-- External library file by default
-- Save overwrites active `.json`
-- Export backup defaults to `<LibraryName>.backup.html`
