@@ -4,12 +4,15 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - 'v*'
+      - "v*"
+
+permissions:
+  contents: write
 
 jobs:
   build:
-    permissions:
-      contents: write
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
@@ -17,11 +20,11 @@ jobs:
           - macos-latest
           - windows-latest
 
-    runs-on: ${{ matrix.platform }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -41,10 +44,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v1
+      # Optional but often useful: makes it obvious your frontend build is OK
+      # If you have a build script, keep this. If your app relies on Tauri to build the frontend,
+      # you can remove it.
+      # - name: Build frontend
+      #   run: npm run build
+
+      - name: Build & publish (Tauri)
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Helps Windows users who don't have WebView2 installed
+          TAURI_BUNDLE_WINDOWS_WEBVIEW2_BOOTSTRAPPER: "true"
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Prompt Saver ${{ github.ref_name }}
