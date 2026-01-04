@@ -1,0 +1,28 @@
+{
+  "productName": "Prompt Saver",
+  "version": "0.2.0",
+  "identifier": "community.invoke.promptsaver",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"]
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Prompt Saver",
+        "width": 1200,
+        "height": 820,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}
