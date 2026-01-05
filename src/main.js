@@ -45,15 +45,14 @@ textarea{
   display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;margin:14px 0
 }
 .badge{
-  padding:8px 14px;border-radius:999px;border:1px solid var(--border2);
-  font-size:34px;line-height:1;
-  visibility:hidden; /* reserve space, but hide text */
-  pointer-events:none;
+  padding:8px 14px;
+  border-radius:999px;
+  border:1px solid var(--border2);
+  font-size:34px;
+  line-height:1;
+  visibility:hidden; /* keep layout stable */
 }
-.badge.is-on{visibility:visible;pointer-events:auto}
-.badge.is-on{visibility:visible;pointer-events:auto}
-lity:hidden;pointer-events:none
-}
+.badge.is-on{ visibility:visible; }
 .controls{display:flex;gap:10px;flex-wrap:wrap;justify-self:end;align-items:center}
 .list{display:grid;gap:16px}
 .card{
@@ -115,22 +114,27 @@ const QUAL = 0.85;
 
 let lib = [];
 let dirty = false;
-let statusPromptCount = 0; // sticky count shown in status
 // Holds the currently-selected image for the *next* prompt (no input preview UI).
 let selectedImageDataUrl = "";
+let selectedModelName = ""; // extracted from uploaded PNG metadata (best-effort)
+let selectedImageFile = null; // original File object for metadata extraction
 
 let activePath = null;
 let activeName = "No Library File Loaded";
 
 function uid(){ return crypto.randomUUID?.() || ("id-"+Date.now()+"-"+Math.random().toString(16).slice(2)); }
-function setDirty(v){ dirty=!!v; const b=document.getElementById("badge"); if(!b) return; b.classList.toggle("is-on", dirty); }
+function setDirty(v){
+  dirty = !!v;
+  const b = document.getElementById("badge");
+  if (b) b.classList.toggle("is-on", dirty);
+}
 function combos(t){
   let m,n=1,any=false,r=/\{([^}]+)\}/g;
   while((m=r.exec(t||""))){ any=true; n *= (m[1].split("|").map(s=>s.trim()).filter(Boolean).length || 1); }
   return any?n:1;
 }
 function updateStatus(prefix="Ready"){
-  document.getElementById("status").textContent = `${prefix} • Prompts In Library: ${statusPromptCount} • Library: ${activeName}`;
+  document.getElementById("status").textContent = `${prefix} • Prompts In Library: ${lib.length} • Library: ${activeName}`;
 }
 function normalizeItems(arr){
   if(!Array.isArray(arr)) return [];
@@ -138,7 +142,8 @@ function normalizeItems(arr){
     const text = (p?.text ?? p?.prompt ?? "").toString();
     const img  = (p?.img ?? p?.imageDataUrl ?? p?.image ?? "").toString();
     const id   = (p?.id ?? uid()).toString();
-    return {id, text, img};
+    const modelName = (p?.modelName ?? p?.model ?? p?.model_name ?? "").toString();
+    return {id, text, img, modelName};
   }).filter(p => (p.text && p.text.trim()) || p.img);
 }
 function parseLibraryJson(obj){
@@ -150,9 +155,9 @@ function parseLibraryJson(obj){
 function buildPayload(){
   return {
     app: "Prompt Saver",
-    version: "desktop-1.2.1",
+    version: "desktop-1.2.0",
     exportedAt: new Date().toISOString(),
-    Prompts: lib.map(p => ({ id:p.id, prompt:p.text, imageDataUrl:p.img }))
+    Prompts: lib.map(p => ({ id:p.id, prompt:p.text, imageDataUrl:p.img, modelName: p.modelName || "" }))
   };
 }
 
@@ -177,11 +182,12 @@ function render(){
     const c = document.createElement("div");
     c.className = "card";
     const n = combos(p.text);
+    const modelSuffix = p.modelName ? ` • Model Used ${escapeHtml(p.modelName)}` : "";
     c.innerHTML = `
       <div>
         <div class="card-header">
           <button type="button" data-a="copy">Copy prompt</button>
-          <div class="gen">Will Generate ${n} Image${n===1?"":"s"}</div>
+          <div class="gen">Will Generate ${n} Image${n===1?"":"s"}${modelSuffix}</div>
           <button type="button" data-a="del">Delete</button>
         </div>
         <div class="prompt"></div>
@@ -233,7 +239,6 @@ async function openLibrary(){
   const obj = JSON.parse(text);
 
   lib = parseLibraryJson(obj);
-  statusPromptCount = lib.length;
   activePath = path;
   activeName = await basename(path);
   setDirty(false);
@@ -249,7 +254,6 @@ async function saveLibrary(){
     if(activePath){
       await writeTextFile(activePath, jsonText);
       setDirty(false);
-      statusPromptCount = lib.length;
       updateStatus("Library saved");
       return;
     }
@@ -265,7 +269,7 @@ async function saveLibrary(){
 
     await writeTextFile(activePath, jsonText);
     setDirty(false);
-    statusPromptCount = lib.length;
+    
     updateStatus("Library saved");
   } catch (err) {
     console.error("Save failed:", err);
@@ -325,7 +329,7 @@ async function importBackup(){
     for(const p of imported){
       const k = p.text+"||"+p.img;
       if(seen.has(k)) continue;
-      lib.push({ id:uid(), text:p.text, img:p.img });
+      lib.push({ id:uid(), text:p.text, img:p.img, modelName: p.modelName || "" });
       seen.add(k);
     }
   }
@@ -335,21 +339,278 @@ async function importBackup(){
   updateStatus("Imported backup");
 }
 
+
+function escapeHtml(s){
+  return String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function inflateDeflateBytes(u8){
+  if (typeof DecompressionStream !== "undefined") {
+    const ds = new DecompressionStream("deflate");
+    const decompressedStream = new Blob([u8]).stream().pipeThrough(ds);
+    const ab = await new Response(decompressedStream).arrayBuffer();
+    return new Uint8Array(ab);
+  }
+  return null;
+}
+
+function u8ToText(u8){
+  return new TextDecoder("utf-8", { fatal:false }).decode(u8);
+}
+
+async function parsePngTextChunks(file){
+  const ab = await file.arrayBuffer();
+  const u8 = new Uint8Array(ab);
+
+  const sig = [137,80,78,71,13,10,26,10];
+  for (let i=0;i<sig.length;i++) if (u8[i] !== sig[i]) return {};
+
+  const out = {};
+  let off = 8;
+
+  const readU32 = (p)=> (u8[p]<<24) | (u8[p+1]<<16) | (u8[p+2]<<8) | (u8[p+3]);
+  while (off + 8 <= u8.length) {
+    const len = (readU32(off) >>> 0); off += 4;
+    const type = String.fromCharCode(u8[off],u8[off+1],u8[off+2],u8[off+3]); off += 4;
+    if (off + len > u8.length) break;
+    const data = u8.slice(off, off+len);
+    off += len;
+    off += 4; // CRC
+
+    if (type === "tEXt") {
+      const nul = data.indexOf(0);
+      if (nul > 0) {
+        const key = u8ToText(data.slice(0, nul));
+        const val = u8ToText(data.slice(nul+1));
+        out[key] = val;
+      }
+    } else if (type === "iTXt") {
+      let p = 0;
+      const nul1 = data.indexOf(0, p);
+      if (nul1 <= 0) continue;
+      const key = u8ToText(data.slice(0, nul1));
+      p = nul1 + 1;
+      const compFlag = data[p]; p += 1;
+      p += 1; // compMethod
+      const nulLang = data.indexOf(0, p); if (nulLang < 0) continue;
+      p = nulLang + 1;
+      const nulTrans = data.indexOf(0, p); if (nulTrans < 0) continue;
+      p = nulTrans + 1;
+      let textBytes = data.slice(p);
+
+      if (compFlag === 1) {
+        const inflated = await inflateDeflateBytes(textBytes);
+        if (!inflated) continue;
+        textBytes = inflated;
+      }
+      out[key] = u8ToText(textBytes);
+    } else if (type === "zTXt") {
+      const nul = data.indexOf(0);
+      if (nul <= 0 || nul+2 > data.length) continue;
+      const key = u8ToText(data.slice(0, nul));
+      const compBytes = data.slice(nul+2);
+      const inflated = await inflateDeflateBytes(compBytes);
+      if (!inflated) continue;
+      out[key] = u8ToText(inflated);
+    }
+  }
+  return out;
+}
+
+function deepFindModelName(obj){
+  const stack = [obj];
+  const seen = new Set();
+  while (stack.length) {
+    const cur = stack.pop();
+    if (!cur || typeof cur !== "object") continue;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+
+    for (const [k,v] of Object.entries(cur)) {
+      const key = String(k).toLowerCase();
+      if (key === "ckpt_name" || key === "checkpoint" || key === "model" || key === "model_name") {
+        if (typeof v === "string" && v.trim()) return v.trim();
+      }
+      if (v && typeof v === "object") stack.push(v);
+    }
+  }
+  return "";
+}
+
+function extractModelNameFromTextChunks(chunks){
+  if (chunks.invokeai_metadata) {
+    try {
+      const meta = JSON.parse(chunks.invokeai_metadata);
+      const n = meta?.model?.name || meta?.model?.base || meta?.model?.key || "";
+      if (n) return String(n);
+    } catch {}
+  }
+
+  if (chunks.parameters) {
+    const m = chunks.parameters.match(/(?:^|[\n,])\s*Model:\s*([^,\n]+)/i);
+    if (m && m[1]) return m[1].trim();
+  }
+
+  if (chunks.prompt) {
+    try {
+      const j = JSON.parse(chunks.prompt);
+      const name = deepFindModelName(j);
+      if (name) return name;
+    } catch {}
+  }
+  if (chunks.workflow) {
+    try {
+      const j = JSON.parse(chunks.workflow);
+      const name = deepFindModelName(j);
+      if (name) return name;
+    } catch {}
+  }
+
+  return "";
+}
+
+async function extractModelNameFromFile(file){
+  if (!file) return "";
+  const isPng = (file.type === "image/png") || (file.name && file.name.toLowerCase().endsWith(".png"));
+  if (!isPng) return "";
+  const chunks = await parsePngTextChunks(file);
+  return extractModelNameFromTextChunks(chunks);
+}
+
+function extractPromptFromTextChunks(chunks){
+  // InvokeAI: JSON metadata
+  if (chunks.invokeai_metadata) {
+    try {
+      const meta = JSON.parse(chunks.invokeai_metadata);
+      // common-ish locations across InvokeAI versions
+      const direct =
+        meta?.positive_prompt ||
+        meta?.prompt ||
+        meta?.prompts?.positive ||
+        meta?.prompts?.prompt ||
+        meta?.generation?.prompt ||
+        meta?.metadata?.prompt ||
+        "";
+      if (direct && typeof direct === "string") return direct.trim();
+
+      // fallback: deep search for likely prompt strings
+      const cand = deepFindLikelyPrompt(meta);
+      if (cand) return cand;
+    } catch {}
+  }
+
+  // A1111 / SD WebUI: 'parameters' text chunk
+  if (chunks.parameters && typeof chunks.parameters === "string") {
+    const txt = chunks.parameters.trim();
+    // Prompt is typically the first section before "Negative prompt:"
+    const parts = txt.split(/\n\s*Negative prompt:\s*/i);
+    const p = (parts[0] || "").trim();
+    if (p) return p;
+  }
+
+  // ComfyUI often stores a JSON 'prompt' or 'workflow'
+  if (chunks.prompt) {
+    try {
+      const j = JSON.parse(chunks.prompt);
+      const cand = deepFindLikelyPrompt(j);
+      if (cand) return cand;
+    } catch {}
+  }
+  if (chunks.workflow) {
+    try {
+      const j = JSON.parse(chunks.workflow);
+      const cand = deepFindLikelyPrompt(j);
+      if (cand) return cand;
+    } catch {}
+  }
+
+  // Fallback: some tools store a plain 'prompt' key (not JSON)
+  if (chunks.prompt && typeof chunks.prompt === "string") {
+    const p = chunks.prompt.trim();
+    if (p && p.length < 2000) return p;
+  }
+
+  return "";
+}
+
+function deepFindLikelyPrompt(obj){
+  // Heuristic: walk JSON and pick the best candidate string found under keys commonly used for prompt text.
+  const preferredKeys = new Set(["text","prompt","positive","positive_prompt","positivePrompt","clip_text","conditioning","string"]);
+  const stack = [obj];
+  const seen = new Set();
+  let best = "";
+
+  const looksLikePrompt = (v) => {
+    if (!v || typeof v !== "string") return false;
+    const s = v.trim();
+    if (s.length < 8) return false;
+    if (s.length > 5000) return false;
+    // avoid obvious non-prompts
+    if (/^https?:\/\//i.test(s)) return false;
+    // needs some natural language-ish signal
+    return /[a-zA-Z]/.test(s) && (s.includes(",") || s.includes(" ") || s.includes(":"));
+  };
+
+  while (stack.length) {
+    const cur = stack.pop();
+    if (!cur || typeof cur !== "object") continue;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+
+    if (Array.isArray(cur)) {
+      for (let i=0;i<cur.length;i++) stack.push(cur[i]);
+      continue;
+    }
+
+    for (const k of Object.keys(cur)) {
+      const v = cur[k];
+      if (typeof v === "string") {
+        if (preferredKeys.has(k) && looksLikePrompt(v)) {
+          const cand = v.trim();
+          if (cand.length > best.length) best = cand;
+        } else if (!best && looksLikePrompt(v)) {
+          // keep a non-preferred fallback if we haven't found anything yet
+          best = v.trim();
+        }
+      } else if (v && typeof v === "object") {
+        stack.push(v);
+      }
+    }
+  }
+  return best;
+}
+
+
+
+
 async function onImageChange(e) {
   const file = e.target.files?.[0];
   const myToken = ++imageLoadToken;
+
+  selectedModelName = "";
+  selectedImageFile = null;
   if (!file) {
     selectedImageDataUrl = "";
     return;
   }
 
-  // No preview: just read and store.
-  const r = new FileReader();
-  r.onload = () => {
-    if (myToken !== imageLoadToken) return;
-    selectedImageDataUrl = String(r.result || "");
-  };
-  r.readAsDataURL(file);
+  const dataUrlPromise = new Promise((resolve) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result || ""));
+    r.readAsDataURL(file);
+  });
+
+  const modelPromise = extractModelNameFromFile(file).catch(() => "");
+
+  const results = await Promise.all([dataUrlPromise, modelPromise]);
+  const dataUrl = results[0];
+  const modelName = results[1];
+
+  if (myToken !== imageLoadToken) return;
+
+  selectedImageDataUrl = dataUrl;
+  selectedModelName = modelName || "";
+  selectedImageFile = file;
 }
 document.getElementById("imageInput").addEventListener("change", onImageChange);
 
@@ -359,19 +620,33 @@ function hardResetImageInput() {
   oldInput.replaceWith(newInput);
   newInput.addEventListener("change", onImageChange);
 }
-document.getElementById("addBtn").addEventListener("click", ()=>{
+document.getElementById("addBtn").addEventListener("click", async ()=>{
   imageLoadToken++;
-  const t = document.getElementById("promptInput").value.trim();
+  let t = document.getElementById("promptInput").value.trim();
   const img = selectedImageDataUrl || "";
+  const modelName = selectedModelName || "";
+
+  // If the user clicked Add with no typed prompt, try to pull it from the uploaded PNG metadata
+  if (!t && img && selectedImageFile) {
+    try {
+      const chunks = await parsePngTextChunks(selectedImageFile);
+      const pulled = extractPromptFromTextChunks(chunks);
+      if (pulled) t = pulled;
+    } catch {}
+  }
+
   if(!t && !img) return alert("Nothing to add");
-  lib.push({ id:uid(), text:t, img });
+  lib.push({ id:uid(), text:t, img, modelName });
+
   document.getElementById("promptInput").value="";
   selectedImageDataUrl = "";
+  selectedModelName = "";
+  selectedImageFile = null;
   hardResetImageInput();
   setDirty(true);
 
   render();
-  updateStatus("Prompt added");
+  updateStatus(t ? "Prompt added" : "Image added");
 });
 document.getElementById("clearAllBtn").addEventListener("click", async ()=>{
   if(!lib.length) return;
