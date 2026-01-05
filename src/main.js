@@ -85,9 +85,7 @@ textarea{
   <div>
     <div class="small">prompt image input box</div>
     <input id="imageInput" type="file" accept="image/*"/>
-    <div class="small" style="margin-top:6px">Preview (JPEG thumbnail)</div>
-    <img id="preview" class="thumb" alt=""/>
-    <button id="clearImageBtn" type="button" style="margin-top:8px">Clear Image</button>
+    <!-- input preview removed (keep only file picker) -->
   </div>
 </div>
 
@@ -111,6 +109,8 @@ const QUAL = 0.85;
 
 let lib = [];
 let dirty = false;
+// Holds the currently-selected image for the *next* prompt (no input preview UI).
+let selectedImageDataUrl = "";
 
 let activePath = null;
 let activeName = "No Library File Loaded";
@@ -143,7 +143,7 @@ function parseLibraryJson(obj){
 function buildPayload(){
   return {
     app: "Prompt Saver",
-    version: "desktop-0.2.0",
+    version: "desktop-1.1.5",
     exportedAt: new Date().toISOString(),
     Prompts: lib.map(p => ({ id:p.id, prompt:p.text, imageDataUrl:p.img }))
   };
@@ -451,19 +451,18 @@ render();
 async function onImageChange(e) {
   const file = e.target.files?.[0];
   const myToken = ++imageLoadToken;
-  if (!file) return;
-  try {
-    const dataUrl = await fileToWebpDataUrl(file);
-    if (myToken !== imageLoadToken) return;
-    document.getElementById("preview").src = dataUrl;
-  } catch {
-    const r = new FileReader();
-    r.onload = () => {
-      if (myToken !== imageLoadToken) return;
-      document.getElementById("preview").src = r.result;
-    };
-    r.readAsDataURL(file);
+  if (!file) {
+    selectedImageDataUrl = "";
+    return;
   }
+
+  // No preview: just read and store.
+  const r = new FileReader();
+  r.onload = () => {
+    if (myToken !== imageLoadToken) return;
+    selectedImageDataUrl = String(r.result || "");
+  };
+  r.readAsDataURL(file);
 }
 document.getElementById("imageInput").addEventListener("change", onImageChange);
 
@@ -473,20 +472,15 @@ function hardResetImageInput() {
   oldInput.replaceWith(newInput);
   newInput.addEventListener("change", onImageChange);
 }
-document.getElementById("clearImageBtn").addEventListener("click", ()=>{
-  imageLoadToken++;
-  hardResetImageInput();
-  document.getElementById("preview").removeAttribute("src");
-  updateStatus("Image cleared");
-});
 document.getElementById("addBtn").addEventListener("click", ()=>{
   imageLoadToken++;
   const t = document.getElementById("promptInput").value.trim();
-  const img = document.getElementById("preview").getAttribute("src") || "";
+  const img = selectedImageDataUrl || "";
   if(!t && !img) return alert("Nothing to add");
   lib.push({ id:uid(), text:t, img });
   document.getElementById("promptInput").value="";
-  document.getElementById("preview").removeAttribute("src");
+  selectedImageDataUrl = "";
+  hardResetImageInput();
   setDirty(true);
   
 // --- Tauri open-library / open-last-library wiring (auto, no clicks)
