@@ -1,3 +1,4 @@
+let imageLoadToken = 0;
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { basename, dirname, extname, join } from "@tauri-apps/api/path";
@@ -448,13 +449,20 @@ render();
 }
 
 async function onImageChange(e) {
-  const f = e.target.files?.[0];
-  if(!f) return;
-  try{ document.getElementById("preview").src = await imgToJpg(f); }
-  catch{
-    const fr=new FileReader();
-    fr.onload=()=>document.getElementById("preview").src=fr.result;
-    fr.readAsDataURL(f);
+  const file = e.target.files?.[0];
+  const myToken = ++imageLoadToken;
+  if (!file) return;
+  try {
+    const dataUrl = await fileToWebpDataUrl(file);
+    if (myToken !== imageLoadToken) return;
+    document.getElementById("preview").src = dataUrl;
+  } catch {
+    const r = new FileReader();
+    r.onload = () => {
+      if (myToken !== imageLoadToken) return;
+      document.getElementById("preview").src = r.result;
+    };
+    r.readAsDataURL(file);
   }
 }
 document.getElementById("imageInput").addEventListener("change", onImageChange);
@@ -466,11 +474,13 @@ function hardResetImageInput() {
   newInput.addEventListener("change", onImageChange);
 }
 document.getElementById("clearImageBtn").addEventListener("click", ()=>{
+  imageLoadToken++;
   hardResetImageInput();
   document.getElementById("preview").removeAttribute("src");
   updateStatus("Image cleared");
 });
 document.getElementById("addBtn").addEventListener("click", ()=>{
+  imageLoadToken++;
   const t = document.getElementById("promptInput").value.trim();
   const img = document.getElementById("preview").getAttribute("src") || "";
   if(!t && !img) return alert("Nothing to add");
