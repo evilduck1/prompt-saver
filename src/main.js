@@ -468,6 +468,7 @@ document.getElementById("addBtn").addEventListener("click", ()=>{
   if(!t && !img) return alert("Nothing to add");
   lib.push({ id:uid(), text:t, img });
   document.getElementById("promptInput").value="";
+  document.getElementById("imageInput").value = "";
   document.getElementById("preview").removeAttribute("src");
   setDirty(true);
   
