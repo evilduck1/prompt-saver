@@ -188,7 +188,7 @@ function render(){
         lib = lib.filter(x=>x.id!==p.id);
         setDirty(true);
         
-// --- Tauri open-library / open-last-library wiring (auto, no clicks)
+// ---- Tauri open-library / open-last-library wiring (auto, no clicks)
 (async () => {
   try {
     const pending = await invoke("take_pending_open");
