@@ -19,7 +19,18 @@ app.innerHTML = `
   --btnhover:rgba(255,255,255,.10);
 }
 *{box-sizing:border-box}
-body{margin:24px;font-family:system-ui,Arial,sans-serif;background:var(--bg);color:var(--text)}
+body{margin:0;font-family:system-ui,Arial,sans-serif;background:var(--bg);color:var(--text)}
+
+#app{height:100vh;overflow:hidden}
+.page{height:100vh;display:flex;flex-direction:column;padding:24px;box-sizing:border-box}
+.top{flex:0 0 auto;position:relative;padding-bottom:12px;margin-bottom:12px}
+.top:after{
+  content:"";
+  position:absolute;left:-24px;right:-24px;bottom:0;height:1px;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+}
+.list{flex:1 1 auto;overflow:auto;padding-right:6px}
+
 h1{margin:0;font-size:44px}
 h2{margin:0;font-size:34px}
 .small{font-size:12px;color:var(--muted)}
@@ -45,14 +56,13 @@ textarea{
   display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;margin:14px 0
 }
 .badge{
-  padding:8px 14px;
-  border-radius:999px;
-  border:1px solid var(--border2);
-  font-size:34px;
-  line-height:1;
+  padding:8px 14px;border-radius:999px;border:1px solid var(--border2);
+  font-size:34px;line-height:1;
   visibility:hidden; /* keep layout stable */
+  white-space:nowrap;
 }
 .badge.is-on{ visibility:visible; }
+
 .controls{display:flex;gap:10px;flex-wrap:wrap;justify-self:end;align-items:center}
 .list{display:grid;gap:16px}
 .card{
@@ -73,6 +83,9 @@ textarea{
   .header .right,.controls{justify-self:start}
 }
 </style>
+
+<div class="page">
+  <div class="top">
 
 <div class="header">
   <h1>Prompt Saver</h1>
@@ -105,8 +118,10 @@ textarea{
     <button id="saveBtn" type="button">Save Library</button>
   </div>
 </div>
+  </div>
 
-<div id="list" class="list"></div>
+  <div id="list" class="list"></div>
+</div>
 `;
 
 const THUMB = 768;
@@ -114,10 +129,11 @@ const QUAL = 0.85;
 
 let lib = [];
 let dirty = false;
+let savedCount = 0; // sticky count: last saved/loaded library
 // Holds the currently-selected image for the *next* prompt (no input preview UI).
 let selectedImageDataUrl = "";
+let selectedImageFile = null; // original File for metadata extraction
 let selectedModelName = ""; // extracted from uploaded PNG metadata (best-effort)
-let selectedImageFile = null; // original File object for metadata extraction
 
 let activePath = null;
 let activeName = "No Library File Loaded";
@@ -134,7 +150,10 @@ function combos(t){
   return any?n:1;
 }
 function updateStatus(prefix="Ready"){
-  document.getElementById("status").textContent = `${prefix} • Prompts In Library: ${lib.length} • Library: ${activeName}`;
+  const saved = savedCount;
+  const current = lib.length;
+  const extra = dirty && current !== saved ? ` • Current: ${current}` : "";
+  document.getElementById("status").textContent = `${prefix} • Prompts In Library: ${saved}${extra} • Library: ${activeName}`;
 }
 function normalizeItems(arr){
   if(!Array.isArray(arr)) return [];
@@ -155,7 +174,7 @@ function parseLibraryJson(obj){
 function buildPayload(){
   return {
     app: "Prompt Saver",
-    version: "desktop-1.2.1",
+    version: "desktop-1.2.3",
     exportedAt: new Date().toISOString(),
     Prompts: lib.map(p => ({ id:p.id, prompt:p.text, imageDataUrl:p.img, modelName: p.modelName || "" }))
   };
@@ -182,7 +201,7 @@ function render(){
     const c = document.createElement("div");
     c.className = "card";
     const n = combos(p.text);
-    const modelSuffix = p.modelName ? ` • Model Used ${escapeHtml(p.modelName)}` : "";
+    const modelSuffix = p.modelName ? ` • ${escapeHtml(p.modelName)}` : "";
     c.innerHTML = `
       <div>
         <div class="card-header">
@@ -241,6 +260,7 @@ async function openLibrary(){
   lib = parseLibraryJson(obj);
   activePath = path;
   activeName = await basename(path);
+  savedCount = lib.length;
   setDirty(false);
 
   render();
@@ -253,6 +273,7 @@ async function saveLibrary(){
 
     if(activePath){
       await writeTextFile(activePath, jsonText);
+      savedCount = lib.length;
       setDirty(false);
       updateStatus("Library saved");
       return;
@@ -268,6 +289,7 @@ async function saveLibrary(){
     activeName = await basename(chosen);
 
     await writeTextFile(activePath, jsonText);
+    savedCount = lib.length;
     setDirty(false);
     
     updateStatus("Library saved");
@@ -329,7 +351,7 @@ async function importBackup(){
     for(const p of imported){
       const k = p.text+"||"+p.img;
       if(seen.has(k)) continue;
-      lib.push({ id:uid(), text:p.text, img:p.img, modelName: p.modelName || "" });
+      lib.push({ id:uid(), text:p.text, img:p.img });
       seen.add(k);
     }
   }
@@ -477,120 +499,107 @@ async function extractModelNameFromFile(file){
   return extractModelNameFromTextChunks(chunks);
 }
 
-function extractPromptFromTextChunks(chunks){
-  // InvokeAI: JSON metadata
-  if (chunks.invokeai_metadata) {
-    try {
-      const meta = JSON.parse(chunks.invokeai_metadata);
-      // common-ish locations across InvokeAI versions
-      const direct =
-        meta?.positive_prompt ||
-        meta?.prompt ||
-        meta?.prompts?.positive ||
-        meta?.prompts?.prompt ||
-        meta?.generation?.prompt ||
-        meta?.metadata?.prompt ||
-        "";
-      if (direct && typeof direct === "string") return direct.trim();
-
-      // fallback: deep search for likely prompt strings
-      const cand = deepFindLikelyPrompt(meta);
-      if (cand) return cand;
-    } catch {}
-  }
-
-  // A1111 / SD WebUI: 'parameters' text chunk
-  if (chunks.parameters && typeof chunks.parameters === "string") {
-    const txt = chunks.parameters.trim();
-    // Prompt is typically the first section before "Negative prompt:"
-    const parts = txt.split(/\n\s*Negative prompt:\s*/i);
-    const p = (parts[0] || "").trim();
-    if (p) return p;
-  }
-
-  // ComfyUI often stores a JSON 'prompt' or 'workflow'
-  if (chunks.prompt) {
-    try {
-      const j = JSON.parse(chunks.prompt);
-      const cand = deepFindLikelyPrompt(j);
-      if (cand) return cand;
-    } catch {}
-  }
-  if (chunks.workflow) {
-    try {
-      const j = JSON.parse(chunks.workflow);
-      const cand = deepFindLikelyPrompt(j);
-      if (cand) return cand;
-    } catch {}
-  }
-
-  // Fallback: some tools store a plain 'prompt' key (not JSON)
-  if (chunks.prompt && typeof chunks.prompt === "string") {
-    const p = chunks.prompt.trim();
-    if (p && p.length < 2000) return p;
-  }
-
-  return "";
-}
-
-function deepFindLikelyPrompt(obj){
-  // Heuristic: walk JSON and pick the best candidate string found under keys commonly used for prompt text.
-  const preferredKeys = new Set(["text","prompt","positive","positive_prompt","positivePrompt","clip_text","conditioning","string"]);
+function deepFindPrompt(obj){
   const stack = [obj];
   const seen = new Set();
-  let best = "";
-
-  const looksLikePrompt = (v) => {
-    if (!v || typeof v !== "string") return false;
-    const s = v.trim();
-    if (s.length < 8) return false;
-    if (s.length > 5000) return false;
-    // avoid obvious non-prompts
-    if (/^https?:\/\//i.test(s)) return false;
-    // needs some natural language-ish signal
-    return /[a-zA-Z]/.test(s) && (s.includes(",") || s.includes(" ") || s.includes(":"));
-  };
-
   while (stack.length) {
     const cur = stack.pop();
     if (!cur || typeof cur !== "object") continue;
     if (seen.has(cur)) continue;
     seen.add(cur);
 
-    if (Array.isArray(cur)) {
-      for (let i=0;i<cur.length;i++) stack.push(cur[i]);
-      continue;
-    }
+    for (const [k,v] of Object.entries(cur)) {
+      const key = String(k).toLowerCase();
 
-    for (const k of Object.keys(cur)) {
-      const v = cur[k];
-      if (typeof v === "string") {
-        if (preferredKeys.has(k) && looksLikePrompt(v)) {
-          const cand = v.trim();
-          if (cand.length > best.length) best = cand;
-        } else if (!best && looksLikePrompt(v)) {
-          // keep a non-preferred fallback if we haven't found anything yet
-          best = v.trim();
-        }
-      } else if (v && typeof v === "object") {
-        stack.push(v);
+      // Strong signals
+      if ((key === "positive_prompt" || key === "positive" || key === "prompt") && typeof v === "string" && v.trim()) {
+        const val = v.trim();
+        if (!/^negative\b/i.test(val)) return val;
       }
+
+      // Weaker signal: "text" is used a lot; accept only if it looks like a prompt
+      if (key === "text" && typeof v === "string") {
+        const val = v.trim();
+        if (val.length >= 25 && !val.toLowerCase().startsWith("negative prompt")) return val;
+      }
+
+      if (v && typeof v === "object") stack.push(v);
     }
   }
-  return best;
+  return "";
 }
 
+function extractPromptFromParametersBlob(parametersText){
+  // A1111 "parameters" format often:
+  // <positive>
+  // Negative prompt: <negative>
+  // Steps: ...
+  const t = String(parametersText || "").trim();
+  if (!t) return "";
+  const negIdx = t.toLowerCase().indexOf("\nnegative prompt:");
+  const stepsIdx = t.toLowerCase().indexOf("\nsteps:");
+  let cut = t.length;
+  if (negIdx !== -1) cut = Math.min(cut, negIdx);
+  if (stepsIdx !== -1) cut = Math.min(cut, stepsIdx);
+  const pos = t.slice(0, cut).trim();
+  // Some tools put "Prompt:" prefix
+  return pos.replace(/^prompt:\s*/i, "").trim();
+}
 
+function extractPromptFromTextChunks(chunks){
+  // Direct keys some tools write
+  for (const k of ["prompt", "positive_prompt", "positive"]) {
+    if (chunks[k] && String(chunks[k]).trim()) return String(chunks[k]).trim();
+  }
+
+  if (chunks.parameters) {
+    const p = extractPromptFromParametersBlob(chunks.parameters);
+    if (p) return p;
+  }
+
+  if (chunks.invokeai_metadata) {
+    try {
+      const meta = JSON.parse(chunks.invokeai_metadata);
+      // Try common InvokeAI shapes
+      const direct = meta?.prompt?.positive || meta?.prompt?.prompt || meta?.positive_prompt || meta?.prompt;
+      if (typeof direct === "string" && direct.trim()) return direct.trim();
+
+      // Otherwise deep search
+      const found = deepFindPrompt(meta);
+      if (found) return found;
+    } catch {}
+  }
+
+  if (chunks.workflow) {
+    try {
+      const wf = JSON.parse(chunks.workflow);
+      const found = deepFindPrompt(wf);
+      if (found) return found;
+    } catch {}
+  }
+
+  return "";
+}
+
+async function extractPromptFromFile(file){
+  if (!file) return "";
+  const isPng = (file.type === "image/png") || (file.name && file.name.toLowerCase().endsWith(".png"));
+  if (!isPng) return "";
+  const chunks = await parsePngTextChunks(file);
+  return extractPromptFromTextChunks(chunks);
+}
 
 
 async function onImageChange(e) {
   const file = e.target.files?.[0];
   const myToken = ++imageLoadToken;
 
+  selectedImageFile = file || null;
+
   selectedModelName = "";
-  selectedImageFile = null;
   if (!file) {
     selectedImageDataUrl = "";
+    selectedImageFile = null;
     return;
   }
 
@@ -610,7 +619,6 @@ async function onImageChange(e) {
 
   selectedImageDataUrl = dataUrl;
   selectedModelName = modelName || "";
-  selectedImageFile = file;
 }
 document.getElementById("imageInput").addEventListener("change", onImageChange);
 
@@ -626,12 +634,14 @@ document.getElementById("addBtn").addEventListener("click", async ()=>{
   const img = selectedImageDataUrl || "";
   const modelName = selectedModelName || "";
 
-  // If the user clicked Add with no typed prompt, try to pull it from the uploaded PNG metadata
-  if (!t && img && selectedImageFile) {
+  let pulled = false;
+  if (!t && selectedImageFile) {
     try {
-      const chunks = await parsePngTextChunks(selectedImageFile);
-      const pulled = extractPromptFromTextChunks(chunks);
-      if (pulled) t = pulled;
+      const extracted = await extractPromptFromFile(selectedImageFile);
+      if (extracted) {
+        t = extracted.trim();
+        pulled = true;
+      }
     } catch {}
   }
 
@@ -640,13 +650,13 @@ document.getElementById("addBtn").addEventListener("click", async ()=>{
 
   document.getElementById("promptInput").value="";
   selectedImageDataUrl = "";
-  selectedModelName = "";
   selectedImageFile = null;
+  selectedModelName = "";
   hardResetImageInput();
   setDirty(true);
 
   render();
-  updateStatus(t ? "Prompt added" : "Image added");
+  updateStatus(pulled ? "Prompt pulled from image" : "Prompt added");
 });
 document.getElementById("clearAllBtn").addEventListener("click", async ()=>{
   if(!lib.length) return;

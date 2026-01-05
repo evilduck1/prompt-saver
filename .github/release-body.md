@@ -1,5 +1,5 @@
-## Prompt Saver v1.2.2
+## Prompt Saver v1.2.3
 
-Changes since v1.2.1:
+Changes since v1.2.2:
 
-- release: v1.2.1
+
