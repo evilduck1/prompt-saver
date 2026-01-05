@@ -1,5 +1,5 @@
-## Prompt Saver v1.1.8
+## Prompt Saver v1.2.0
 
-Changes since v1.1.7:
+Changes since v1.1.8:
 
-- chore: update 1 file(s)
+

@@ -46,7 +46,13 @@ textarea{
 }
 .badge{
   padding:8px 14px;border-radius:999px;border:1px solid var(--border2);
-  font-size:34px;line-height:1
+  font-size:34px;line-height:1;
+  visibility:hidden; /* reserve space, but hide text */
+  pointer-events:none;
+}
+.badge.is-on{visibility:visible;pointer-events:auto}
+.badge.is-on{visibility:visible;pointer-events:auto}
+lity:hidden;pointer-events:none
 }
 .controls{display:flex;gap:10px;flex-wrap:wrap;justify-self:end;align-items:center}
 .list{display:grid;gap:16px}
@@ -90,7 +96,7 @@ textarea{
 </div>
 
 <div class="library-head">
-  <div id="badge" class="badge" style="display:none">Unsaved Prompts</div>
+  <div id="badge" class="badge">Unsaved Changes</div>
   <div id="status" class="small"></div>
   <div class="controls">
     <h2>Library</h2>
@@ -109,6 +115,7 @@ const QUAL = 0.85;
 
 let lib = [];
 let dirty = false;
+let statusPromptCount = 0; // sticky count shown in status
 // Holds the currently-selected image for the *next* prompt (no input preview UI).
 let selectedImageDataUrl = "";
 
@@ -116,14 +123,14 @@ let activePath = null;
 let activeName = "No Library File Loaded";
 
 function uid(){ return crypto.randomUUID?.() || ("id-"+Date.now()+"-"+Math.random().toString(16).slice(2)); }
-function setDirty(v){ dirty=!!v; document.getElementById("badge").style.display = dirty ? "inline-flex" : "none"; }
+function setDirty(v){ dirty=!!v; const b=document.getElementById("badge"); if(!b) return; b.classList.toggle("is-on", dirty); }
 function combos(t){
   let m,n=1,any=false,r=/\{([^}]+)\}/g;
   while((m=r.exec(t||""))){ any=true; n *= (m[1].split("|").map(s=>s.trim()).filter(Boolean).length || 1); }
   return any?n:1;
 }
 function updateStatus(prefix="Ready"){
-  document.getElementById("status").textContent = `${prefix} • Prompts In Library: ${lib.length} • Library: ${activeName}`;
+  document.getElementById("status").textContent = `${prefix} • Prompts In Library: ${statusPromptCount} • Library: ${activeName}`;
 }
 function normalizeItems(arr){
   if(!Array.isArray(arr)) return [];
@@ -143,7 +150,7 @@ function parseLibraryJson(obj){
 function buildPayload(){
   return {
     app: "Prompt Saver",
-    version: "desktop-1.1.7",
+    version: "desktop-1.2.0",
     exportedAt: new Date().toISOString(),
     Prompts: lib.map(p => ({ id:p.id, prompt:p.text, imageDataUrl:p.img }))
   };
@@ -211,7 +218,7 @@ function render(){
 
 async function openLibrary(){
   if(dirty){
-    const ok = await confirm("Discard unsaved prompts?", { title: "Prompt Saver", kind: "warning" });
+    const ok = await confirm("Discard Unsaved Changes?", { title: "Prompt Saver", kind: "warning" });
     if(!ok) return;
   }
 
@@ -226,6 +233,7 @@ async function openLibrary(){
   const obj = JSON.parse(text);
 
   lib = parseLibraryJson(obj);
+  statusPromptCount = lib.length;
   activePath = path;
   activeName = await basename(path);
   setDirty(false);
@@ -241,6 +249,7 @@ async function saveLibrary(){
     if(activePath){
       await writeTextFile(activePath, jsonText);
       setDirty(false);
+      statusPromptCount = lib.length;
       updateStatus("Library saved");
       return;
     }
@@ -256,7 +265,7 @@ async function saveLibrary(){
 
     await writeTextFile(activePath, jsonText);
     setDirty(false);
-    
+    statusPromptCount = lib.length;
     updateStatus("Library saved");
   } catch (err) {
     console.error("Save failed:", err);
@@ -411,3 +420,36 @@ window.addEventListener("beforeunload", () => {
 render();
 updateStatus("Ready");
 
+
+
+// Disable right-click everywhere EXCEPT the prompt input box
+document.addEventListener(
+  "contextmenu",
+  (e) => {
+    const promptInput = document.getElementById("promptInput");
+
+    // Allow right-click inside the prompt textarea only
+    if (promptInput && promptInput.contains(e.target)) {
+      return;
+    }
+
+    e.preventDefault();
+  },
+  { capture: true }
+);
+
+// Block aux/right mouse button outside prompt input
+document.addEventListener(
+  "auxclick",
+  (e) => {
+    if (e.button !== 2) return;
+
+    const promptInput = document.getElementById("promptInput");
+    if (promptInput && promptInput.contains(e.target)) {
+      return;
+    }
+
+    e.preventDefault();
+  },
+  { capture: true }
+);
