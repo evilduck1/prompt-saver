@@ -69,6 +69,11 @@ textarea{
   display:grid;grid-template-columns:2fr 1.2fr;gap:16px;
   padding:16px;border-radius:18px;background:var(--panel2);border:1px solid var(--border)
 }
+/* prevent subtle horizontal overflow */
+.card{min-width:0}
+.card > *{min-width:0}
+.prompt{min-width:0}
+
 .card-header{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
 .gen{font-weight:600;font-size:14px}
 .prompt{
@@ -92,7 +97,7 @@ textarea{
   box-shadow: 0 12px 30px rgba(0,0,0,.45);
   border-bottom: 1px solid rgba(255,255,255,.06);
 }
-.scrollArea{flex:1; min-height:0; overflow:auto; padding-top:18px; overscroll-behavior:contain;}
+.scrollArea{flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding-top:18px; overscroll-behavior:contain;}
 
 </style>
 
@@ -117,7 +122,6 @@ textarea{
   <h1>Prompt Saver</h1>
   <button id="addBtn" type="button">Add Prompt</button>
   <div class="right">
-    <button id="clearAllBtn" type="button">Clear All</button>
   </div>
 </div>
 
@@ -192,7 +196,7 @@ function parseLibraryJson(obj){
 function buildPayload(){
   return {
     app: "Prompt Saver",
-    version: "desktop-1.2.4",
+    version: "desktop-1.2.5",
     exportedAt: new Date().toISOString(),
     Prompts: lib.map(p => ({ id:p.id, prompt:p.text, imageDataUrl:p.img, modelName: p.modelName || "" }))
   };
@@ -676,17 +680,6 @@ document.getElementById("addBtn").addEventListener("click", async ()=>{
   render();
   updateStatus(pulled ? "Prompt pulled from image" : "Prompt added");
 });
-document.getElementById("clearAllBtn").addEventListener("click", async ()=>{
-  if(!lib.length) return;
-  const ok = await confirm("Clear ALL prompts?", { title: "Prompt Saver", kind: "warning" });
-  if(!ok) return;
-  lib=[];
-  setDirty(true);
-
-  render();
-  updateStatus("Library cleared");
-});
-
 document.getElementById("openBtn").addEventListener("click", openLibrary);
 document.getElementById("saveBtn").addEventListener("click", saveLibrary);
 document.getElementById("exportBtn").addEventListener("click", exportBackup);
