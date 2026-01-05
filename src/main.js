@@ -188,7 +188,7 @@ function render(){
         lib = lib.filter(x=>x.id!==p.id);
         setDirty(true);
         
-// ---- Tauri open-library / open-last-library wiring (auto, no clicks)
+// --- Tauri open-library / open-last-library wiring (auto, no clicks)
 (async () => {
   try {
     const pending = await invoke("take_pending_open");
@@ -447,7 +447,7 @@ render();
   updateStatus("Imported backup");
 }
 
-document.getElementById("imageInput").addEventListener("change", async (e)=>{
+async function onImageChange(e) {
   const f = e.target.files?.[0];
   if(!f) return;
   try{ document.getElementById("preview").src = await imgToJpg(f); }
@@ -456,9 +456,17 @@ document.getElementById("imageInput").addEventListener("change", async (e)=>{
     fr.onload=()=>document.getElementById("preview").src=fr.result;
     fr.readAsDataURL(f);
   }
-});
+}
+document.getElementById("imageInput").addEventListener("change", onImageChange);
+
+function hardResetImageInput() {
+  const oldInput = document.getElementById("imageInput");
+  const newInput = oldInput.cloneNode(true);
+  oldInput.replaceWith(newInput);
+  newInput.addEventListener("change", onImageChange);
+}
 document.getElementById("clearImageBtn").addEventListener("click", ()=>{
-  document.getElementById("imageInput").value="";
+  hardResetImageInput();
   document.getElementById("preview").removeAttribute("src");
   updateStatus("Image cleared");
 });
@@ -468,7 +476,6 @@ document.getElementById("addBtn").addEventListener("click", ()=>{
   if(!t && !img) return alert("Nothing to add");
   lib.push({ id:uid(), text:t, img });
   document.getElementById("promptInput").value="";
-  document.getElementById("imageInput").value = "";
   document.getElementById("preview").removeAttribute("src");
   setDirty(true);
   
