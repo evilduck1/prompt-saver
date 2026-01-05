@@ -16,11 +16,10 @@ fn main() {
       let handle = app.handle();
 
       if let Some(path) = paths.first().cloned() {
-        // macOS may pass multiple files — open the first
-        let _ = handle.emit_all("open-library", path);
+        // Tauri v2: `emit_all` was renamed to `emit`
+        let _ = handle.emit("open-library", path);
       } else {
-        // No file passed → frontend auto-opens last library
-        let _ = handle.emit_all("open-last-library", ());
+        let _ = handle.emit("open-last-library", ());
       }
 
       Ok(())
