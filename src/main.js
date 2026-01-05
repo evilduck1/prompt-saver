@@ -82,9 +82,35 @@ textarea{
   .inputs,.card,.header,.library-head{grid-template-columns:1fr}
   .header .right,.controls{justify-self:start}
 }
+
+/* fixed top library bar + scrollable content (matches mockup) */
+.stickybar{flex:0 0 auto; position:relative; z-index:50;}
+.stickybar .library-head{
+  background: rgba(15,15,15,.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 12px 30px rgba(0,0,0,.45);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.scrollArea{flex:1; min-height:0; overflow:auto; padding-top:18px; overscroll-behavior:contain;}
+
 </style>
 
 <div class="page">
+  <div class="stickybar">
+<div class="library-head">
+  <div id="badge" class="badge">Unsaved Changes</div>
+  <div id="status" class="small"></div>
+  <div class="controls">
+    <h2>Library</h2>
+    <button id="exportBtn" type="button">Export Backup (HTML)</button>
+    <button id="importBtn" type="button">Import Backup (HTML)</button>
+    <button id="openBtn" type="button">Open Library</button>
+    <button id="saveBtn" type="button">Save Library</button>
+  </div>
+</div>
+  </div>
+  <div class="scrollArea">
   <div class="top">
 
 <div class="header">
@@ -107,20 +133,12 @@ textarea{
   </div>
 </div>
 
-<div class="library-head">
-  <div id="badge" class="badge">Unsaved Changes</div>
-  <div id="status" class="small"></div>
-  <div class="controls">
-    <h2>Library</h2>
-    <button id="exportBtn" type="button">Export Backup (HTML)</button>
-    <button id="importBtn" type="button">Import Backup (HTML)</button>
-    <button id="openBtn" type="button">Open Library</button>
-    <button id="saveBtn" type="button">Save Library</button>
-  </div>
-</div>
+
   </div>
 
   <div id="list" class="list"></div>
+</div>
+  </div>
 </div>
 `;
 
@@ -174,7 +192,7 @@ function parseLibraryJson(obj){
 function buildPayload(){
   return {
     app: "Prompt Saver",
-    version: "desktop-1.2.3",
+    version: "desktop-1.2.4",
     exportedAt: new Date().toISOString(),
     Prompts: lib.map(p => ({ id:p.id, prompt:p.text, imageDataUrl:p.img, modelName: p.modelName || "" }))
   };
