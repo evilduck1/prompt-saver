@@ -6,4 +6,4 @@ A lightweight prompt library manager built for the Invoke community.
 - Save/load an external library file
 - Export/Import backups independently of library saves
 -"FOR MAC USERS ONLY" ONCE MOVED TO THE APPLICATIONS FOLDER BUT BEFORE FIRST USE, RUN THE COMMAND BELOW IN TERMINAL
--ttr -dr com.apple.quarantine "/Applications/Prompt Saver.app"
+-xattr -dr com.apple.quarantine "/Applications/Prompt Saver.app"
