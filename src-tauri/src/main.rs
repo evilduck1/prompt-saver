@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::Manager;
+use tauri::Emitter;
 
 fn main() {
   tauri::Builder::default()
@@ -16,9 +16,10 @@ fn main() {
       let handle = app.handle();
 
       if let Some(path) = paths.first().cloned() {
-        // Tauri v2: `emit_all` was renamed to `emit`
+        // Open library directly
         let _ = handle.emit("open-library", path);
       } else {
+        // No file → frontend auto-opens last library
         let _ = handle.emit("open-last-library", ());
       }
 
