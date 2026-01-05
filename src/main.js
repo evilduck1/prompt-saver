@@ -1,5 +1,5 @@
 let imageLoadToken = 0;
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open, save, confirm } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { basename, dirname, extname, join } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
@@ -186,10 +186,11 @@ function render(){
     const delBtn = c.querySelector('[data-a="del"]');
     const copyBtn = c.querySelector('[data-a="copy"]');
 
-    delBtn.addEventListener("click", (e)=>{
+    delBtn.addEventListener("click", async (e)=>{
       e.preventDefault();
       e.stopPropagation();
-      if(!confirm("Delete this prompt?")) return;
+      const ok = await confirm("Delete this prompt?", { title: "Prompt Saver", kind: "warning" });
+      if(!ok) return;
       lib = lib.filter(x=>x.id!==p.id);
       setDirty(true);
       render();
@@ -209,7 +210,10 @@ function render(){
 
 
 async function openLibrary(){
-  if(dirty && !confirm("Discard unsaved prompts?")) return;
+  if(dirty){
+    const ok = await confirm("Discard unsaved prompts?", { title: "Prompt Saver", kind: "warning" });
+    if(!ok) return;
+  }
 
   const selected = await open({
     multiple: false,
@@ -304,7 +308,7 @@ async function importBackup(){
   const payload = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
   const imported = parseLibraryJson(payload);
 
-  const replace = confirm(`Found ${imported.length} prompts in backup.\n\nOK = Replace current prompts\nCancel = Merge`);
+  const replace = await confirm(`Found ${imported.length} prompts in backup.\n\nOK = Replace current prompts\nCancel = Merge`, { title: "Prompt Saver", kind: "info" });
   if(replace){
     lib = imported;
   }else{
@@ -360,8 +364,10 @@ document.getElementById("addBtn").addEventListener("click", ()=>{
   render();
   updateStatus("Prompt added");
 });
-document.getElementById("clearAllBtn").addEventListener("click", ()=>{
-  if(!lib.length || !confirm("Clear ALL prompts?")) return;
+document.getElementById("clearAllBtn").addEventListener("click", async ()=>{
+  if(!lib.length) return;
+  const ok = await confirm("Clear ALL prompts?", { title: "Prompt Saver", kind: "warning" });
+  if(!ok) return;
   lib=[];
   setDirty(true);
 
