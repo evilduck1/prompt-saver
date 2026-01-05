@@ -48,6 +48,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Read release notes
+        id: relnotes
+        shell: bash
+        run: |
+          if [ -f .github/release-body.md ]; then
+            echo "body<<EOF" >> $GITHUB_OUTPUT
+            cat .github/release-body.md >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "body<<EOF" >> $GITHUB_OUTPUT
+            echo "Prompt Saver desktop build." >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "Download the installer for your platform below." >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build & publish (Tauri)
         uses: tauri-apps/tauri-action@v0
         env:
@@ -56,8 +72,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Prompt Saver ${{ github.ref_name }}
-          releaseBody: |
-            Prompt Saver desktop build.
-            Download the installer for your platform below.
+          releaseBody: ${{ steps.relnotes.outputs.body }}
           releaseDraft: false
           prerelease: false
+
