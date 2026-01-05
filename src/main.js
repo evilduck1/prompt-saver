@@ -1,6 +1,9 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { basename, dirname, extname, join } from "@tauri-apps/api/path";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+
 
 const app = document.getElementById("app");
 app.innerHTML = `
@@ -184,7 +187,41 @@ function render(){
         if(!confirm("Delete this prompt?")) return;
         lib = lib.filter(x=>x.id!==p.id);
         setDirty(true);
-        render();
+        
+// --- Tauri open-library / open-last-library wiring (auto, no clicks)
+(async () => {
+  try {
+    const pending = await invoke("take_pending_open");
+    if (pending?.type === "open-library" && pending.path) {
+      await openLibraryFromPath(pending.path);
+    } else if (pending?.type === "open-last-library") {
+      await openLastLibrary();
+    }
+  } catch {}
+
+  await listen("open-library", async (event) => {
+    if (event.payload) await openLibraryFromPath(event.payload);
+  });
+
+  await listen("open-last-library", async () => {
+    await openLastLibrary();
+  });
+})();
+
+
+// --- Auto-save on close (no prompts, no blocking)
+window.removeEventListener("beforeunload", () => {});
+window.addEventListener("beforeunload", (e) => {
+  if (!dirty) return;
+  try {
+    // save silently if possible
+    saveLibrary();
+  } catch (err) {
+    console.warn("autosave failed", err);
+  }
+});
+
+render();
         updateStatus("Prompt deleted");
       }
       if(a==="copy"){
@@ -213,7 +250,41 @@ async function openLibrary(){
   activePath = path;
   activeName = await basename(path);
   setDirty(false);
-  render();
+  
+// --- Tauri open-library / open-last-library wiring (auto, no clicks)
+(async () => {
+  try {
+    const pending = await invoke("take_pending_open");
+    if (pending?.type === "open-library" && pending.path) {
+      await openLibraryFromPath(pending.path);
+    } else if (pending?.type === "open-last-library") {
+      await openLastLibrary();
+    }
+  } catch {}
+
+  await listen("open-library", async (event) => {
+    if (event.payload) await openLibraryFromPath(event.payload);
+  });
+
+  await listen("open-last-library", async () => {
+    await openLastLibrary();
+  });
+})();
+
+
+// --- Auto-save on close (no prompts, no blocking)
+window.removeEventListener("beforeunload", () => {});
+window.addEventListener("beforeunload", (e) => {
+  if (!dirty) return;
+  try {
+    // save silently if possible
+    saveLibrary();
+  } catch (err) {
+    console.warn("autosave failed", err);
+  }
+});
+
+render();
   updateStatus("Loaded Library");
 }
 
@@ -239,7 +310,41 @@ async function saveLibrary(){
 
     await writeTextFile(activePath, jsonText);
     setDirty(false);
-    render();
+    
+// --- Tauri open-library / open-last-library wiring (auto, no clicks)
+(async () => {
+  try {
+    const pending = await invoke("take_pending_open");
+    if (pending?.type === "open-library" && pending.path) {
+      await openLibraryFromPath(pending.path);
+    } else if (pending?.type === "open-last-library") {
+      await openLastLibrary();
+    }
+  } catch {}
+
+  await listen("open-library", async (event) => {
+    if (event.payload) await openLibraryFromPath(event.payload);
+  });
+
+  await listen("open-last-library", async () => {
+    await openLastLibrary();
+  });
+})();
+
+
+// --- Auto-save on close (no prompts, no blocking)
+window.removeEventListener("beforeunload", () => {});
+window.addEventListener("beforeunload", (e) => {
+  if (!dirty) return;
+  try {
+    // save silently if possible
+    saveLibrary();
+  } catch (err) {
+    console.warn("autosave failed", err);
+  }
+});
+
+render();
     updateStatus("Library saved");
   } catch (err) {
     console.error("Save failed:", err);
@@ -304,7 +409,41 @@ async function importBackup(){
     }
   }
   setDirty(true);
-  render();
+  
+// --- Tauri open-library / open-last-library wiring (auto, no clicks)
+(async () => {
+  try {
+    const pending = await invoke("take_pending_open");
+    if (pending?.type === "open-library" && pending.path) {
+      await openLibraryFromPath(pending.path);
+    } else if (pending?.type === "open-last-library") {
+      await openLastLibrary();
+    }
+  } catch {}
+
+  await listen("open-library", async (event) => {
+    if (event.payload) await openLibraryFromPath(event.payload);
+  });
+
+  await listen("open-last-library", async () => {
+    await openLastLibrary();
+  });
+})();
+
+
+// --- Auto-save on close (no prompts, no blocking)
+window.removeEventListener("beforeunload", () => {});
+window.addEventListener("beforeunload", (e) => {
+  if (!dirty) return;
+  try {
+    // save silently if possible
+    saveLibrary();
+  } catch (err) {
+    console.warn("autosave failed", err);
+  }
+});
+
+render();
   updateStatus("Imported backup");
 }
 
@@ -331,14 +470,82 @@ document.getElementById("addBtn").addEventListener("click", ()=>{
   document.getElementById("promptInput").value="";
   document.getElementById("preview").removeAttribute("src");
   setDirty(true);
-  render();
+  
+// --- Tauri open-library / open-last-library wiring (auto, no clicks)
+(async () => {
+  try {
+    const pending = await invoke("take_pending_open");
+    if (pending?.type === "open-library" && pending.path) {
+      await openLibraryFromPath(pending.path);
+    } else if (pending?.type === "open-last-library") {
+      await openLastLibrary();
+    }
+  } catch {}
+
+  await listen("open-library", async (event) => {
+    if (event.payload) await openLibraryFromPath(event.payload);
+  });
+
+  await listen("open-last-library", async () => {
+    await openLastLibrary();
+  });
+})();
+
+
+// --- Auto-save on close (no prompts, no blocking)
+window.removeEventListener("beforeunload", () => {});
+window.addEventListener("beforeunload", (e) => {
+  if (!dirty) return;
+  try {
+    // save silently if possible
+    saveLibrary();
+  } catch (err) {
+    console.warn("autosave failed", err);
+  }
+});
+
+render();
   updateStatus("Prompt added");
 });
 document.getElementById("clearAllBtn").addEventListener("click", ()=>{
   if(!lib.length || !confirm("Clear ALL prompts?")) return;
   lib=[];
   setDirty(true);
-  render();
+  
+// --- Tauri open-library / open-last-library wiring (auto, no clicks)
+(async () => {
+  try {
+    const pending = await invoke("take_pending_open");
+    if (pending?.type === "open-library" && pending.path) {
+      await openLibraryFromPath(pending.path);
+    } else if (pending?.type === "open-last-library") {
+      await openLastLibrary();
+    }
+  } catch {}
+
+  await listen("open-library", async (event) => {
+    if (event.payload) await openLibraryFromPath(event.payload);
+  });
+
+  await listen("open-last-library", async () => {
+    await openLastLibrary();
+  });
+})();
+
+
+// --- Auto-save on close (no prompts, no blocking)
+window.removeEventListener("beforeunload", () => {});
+window.addEventListener("beforeunload", (e) => {
+  if (!dirty) return;
+  try {
+    // save silently if possible
+    saveLibrary();
+  } catch (err) {
+    console.warn("autosave failed", err);
+  }
+});
+
+render();
   updateStatus("Library cleared");
 });
 
@@ -350,6 +557,40 @@ document.getElementById("importBtn").addEventListener("click", importBackup);
 window.addEventListener("beforeunload",(e)=>{
   if(!dirty) return;
   e.preventDefault(); e.returnValue="";
+});
+
+
+// --- Tauri open-library / open-last-library wiring (auto, no clicks)
+(async () => {
+  try {
+    const pending = await invoke("take_pending_open");
+    if (pending?.type === "open-library" && pending.path) {
+      await openLibraryFromPath(pending.path);
+    } else if (pending?.type === "open-last-library") {
+      await openLastLibrary();
+    }
+  } catch {}
+
+  await listen("open-library", async (event) => {
+    if (event.payload) await openLibraryFromPath(event.payload);
+  });
+
+  await listen("open-last-library", async () => {
+    await openLastLibrary();
+  });
+})();
+
+
+// --- Auto-save on close (no prompts, no blocking)
+window.removeEventListener("beforeunload", () => {});
+window.addEventListener("beforeunload", (e) => {
+  if (!dirty) return;
+  try {
+    // save silently if possible
+    saveLibrary();
+  } catch (err) {
+    console.warn("autosave failed", err);
+  }
 });
 
 render();

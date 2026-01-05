@@ -1,6 +1,5 @@
-## Prompt Saver v1.0.7
+## Prompt Saver v1.0.8
 
-Changes since v1.0.6:
+Changes since v1.0.7:
 
-- release: v1.0.0
-- ci: use generated release notes when available
+
