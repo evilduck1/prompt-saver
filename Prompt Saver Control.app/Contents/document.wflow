@@ -65,6 +65,7 @@ set --
 
 REPO_DIR="/Users/seanengland/dev/prompt-saver-tauri-v2-scaffold"
 cd "$REPO_DIR"
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 # Basic sanity
 if [[ ! -f "src-tauri/tauri.conf.json" ]]; then
