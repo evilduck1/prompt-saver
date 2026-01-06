@@ -1,10 +1,15 @@
 # Prompt Saver
 
 A lightweight prompt library manager built for the Invoke community.
+Library size & stress testing
+
+Prompt Saver has been stress-tested using large libraries to understand real-world limits when images are embedded.
+
+In testing, a library containing 1,250 prompts with images, a 138MB library file size loaded in around 5 seconds on the test machine A M1 Macbook Air. Load time will vary depending on user hardware, available memory, and disk speed.
 
 * FOR MAC USERS ONLY ONCE MOVED TO THE APPLICATIONS FOLDER BUT BEFORE FIRST USE, RUN THIS COMMAND IN TERMINAL xattr -dr com.apple.quarantine "/Applications/Prompt Saver.app"
 
-## 🪟 Windows SmartScreen Warning (First Launch)
+## Windows SmartScreen Warning (First Launch)
 
 When you first run **Prompt Saver** on Windows, you may see a message saying **“Windows protected your PC”**.
 
