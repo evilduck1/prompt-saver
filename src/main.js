@@ -214,7 +214,7 @@ function updateOptimizeButtonVisibility(){
 function buildPayload(){
   return {
     app: "Prompt Saver",
-    version: "desktop-1.2.7",
+    version: "desktop-1.2.8",
     exportedAt: new Date().toISOString(),
     meta: libraryMeta,
     Prompts: lib.map(p => ({ id:p.id, prompt:p.text, imageDataUrl:p.img, modelName: p.modelName || "" }))
