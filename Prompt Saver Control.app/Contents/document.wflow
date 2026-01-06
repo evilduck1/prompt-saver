@@ -113,35 +113,12 @@ else
   COMMIT_MSG="chore: update $CHANGED_COUNT file(s)"
 fi
 
-# If releasing, auto-generate release notes into .github/release-body.md
-if [[ "$ACTION" == "Push + Release" ]]; then
-  mkdir -p .github
-
-  LAST_TAG="$(git describe --tags --abbrev=0 2&gt;/dev/null || true)"
-  {
-    echo "## Prompt Saver v$VERSION"
-    echo
-    if [[ -n "$LAST_TAG" ]]; then
-      echo "Changes since $LAST_TAG:"
-      echo
-      git log "$LAST_TAG..HEAD" --no-merges --pretty=format:"- %s"
-    else
-      echo "Changes:"
-      echo
-      git log --no-merges --pretty=format:"- %s"
-    fi
-    echo
-  } &gt; .github/release-body.md
-
-  git add .github/release-body.md
-fi
-
 # Commit + push
 git add -A
 git commit -m "$COMMIT_MSG"
 git push
 
-# Tag + push tag if requested
+# Tag + push tag + create GitHub Release (auto-generated notes) if requested
 if [[ "$ACTION" == "Push + Release" ]]; then
   TAG="v$VERSION"
 
@@ -152,10 +129,30 @@ if [[ "$ACTION" == "Push + Release" ]]; then
 
   git tag -a "$TAG" -m "Prompt Saver $TAG"
   git push origin "$TAG"
+
+  # Create GitHub Release with auto-generated notes (Option 2)
+  if command -v gh &gt;/dev/null 2&gt;&amp;1; then
+    if ! gh auth status &gt;/dev/null 2&gt;&amp;1; then
+      /usr/bin/osascript -e 'display dialog "GitHub CLI (gh) is installed but not authenticated.\n\nRun in Terminal:\n\n  gh auth login\n\nThen try again." buttons {"OK"}'
+      exit 1
+    fi
+
+    # Fail fast if release already exists
+    if gh release view "$TAG" &gt;/dev/null 2&gt;&amp;1; then
+      /usr/bin/osascript -e 'display dialog "GitHub Release already exists for '"$TAG"'.\n\nTag was pushed; release was not recreated." buttons {"OK"}'
+      exit 1
+    fi
+
+    gh release create "$TAG" \
+      --title "Prompt Saver $TAG" \
+      --generate-notes
+
+  else
+    /usr/bin/osascript -e 'display dialog "Tag pushed: '"$TAG"'.\n\nTo auto-create a GitHub Release with generated notes, install GitHub CLI:\n\n  brew install gh" buttons {"OK"}'
+  fi
 fi
 
-/usr/bin/osascript -e 'display dialog "✅ Done!" buttons {"OK"}'
-</string>
+/usr/bin/osascript -e 'display dialog "✅ Done!" buttons {"OK"}'</string>
 					<key>CheckedForUserDefaultShell</key>
 					<true/>
 					<key>inputMethod</key>
@@ -265,12 +262,10 @@ fi
 						<string>4</string>
 					</dict>
 				</dict>
-				<key>conversionLabel</key>
-				<integer>0</integer>
 				<key>isViewVisible</key>
 				<integer>1</integer>
 				<key>location</key>
-				<string>309.000000:548.000000</string>
+				<string>309.000000:252.000000</string>
 				<key>nibPath</key>
 				<string>/System/Library/Automator/Run Shell Script.action/Contents/Resources/Base.lproj/main.nib</string>
 			</dict>

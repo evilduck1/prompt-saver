@@ -108,10 +108,11 @@ textarea{
   <div id="status" class="small"></div>
   <div class="controls">
     <h2>Library</h2>
-    <button id="exportBtn" type="button">Export Backup (HTML)</button>
-    <button id="importBtn" type="button">Import Backup (HTML)</button>
+    <button id="exportBtn" type="button">Export Backup</button>
+    <button id="importBtn" type="button">Import Backup</button>
     <button id="openBtn" type="button">Open Library</button>
     <button id="saveBtn" type="button">Save Library</button>
+    <button id="optimizeBtn" type="button" style="display:none" title="Convert embedded PNGs to 512px JPEG thumbnails">Optimize Images</button>
   </div>
 </div>
   </div>
@@ -146,11 +147,13 @@ textarea{
 </div>
 `;
 
-const THUMB = 768;
+const THUMB = 512;
 const QUAL = 0.85;
 
 let lib = [];
 let dirty = false;
+let libraryMeta = {};
+let libraryLoaded = false;
 let savedCount = 0; // sticky count: last saved/loaded library
 // Holds the currently-selected image for the *next* prompt (no input preview UI).
 let selectedImageDataUrl = "";
@@ -193,11 +196,27 @@ function parseLibraryJson(obj){
   if(obj && Array.isArray(obj.library)) return normalizeItems(obj.library);
   return [];
 }
+
+function updateOptimizeButtonVisibility(){
+  const btn = document.getElementById("optimizeBtn");
+  if(!btn) return;
+
+  // hidden until a library is loaded from disk
+  if(!libraryLoaded){
+    btn.style.display = "none";
+    return;
+  }
+
+  const optimized = !!(libraryMeta && libraryMeta.imagesOptimized);
+  btn.style.display = optimized ? "none" : "";
+}
+
 function buildPayload(){
   return {
     app: "Prompt Saver",
-    version: "desktop-1.2.6",
+    version: "desktop-1.2.7",
     exportedAt: new Date().toISOString(),
+    meta: libraryMeta,
     Prompts: lib.map(p => ({ id:p.id, prompt:p.text, imageDataUrl:p.img, modelName: p.modelName || "" }))
   };
 }
@@ -211,6 +230,79 @@ async function imgToJpg(file){
   c.getContext("2d").drawImage(b,0,0,c.width,c.height);
   const blob = await new Promise(r=>c.toBlob(r,"image/jpeg",QUAL));
   return await new Promise(r=>{ const fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(blob); });
+}
+
+async function optimizeLibraryImagesToThumbnails(){
+  if(!Array.isArray(lib) || lib.length === 0){
+    updateStatus("No prompts to optimize");
+    return;
+  }
+
+  const ok = await confirm(
+    "Optimize embedded images to 512px JPEG thumbnails?\n\n• PNG/WEBP/etc → converted to JPEG\n• JPEGs are kept unless larger than 512px (then they’re downscaled)\n\nTip: export a backup first.",
+    { title: "Optimize Images", kind: "warning" }
+  );
+  if(!ok) return;
+
+  let converted = 0;   // non-JPEG -> JPEG
+  let downscaled = 0;  // JPEG -> smaller JPEG
+  let skipped = 0;
+  let failed = 0;
+
+  for(let k = 0; k < lib.length; k++){
+    const p = lib[k];
+    const img = (p && p.img) ? String(p.img) : "";
+
+    if(!img || img.indexOf("data:image/") !== 0){
+      skipped++;
+      continue;
+    }
+
+      const isJpeg =
+        img.indexOf("data:image/jpeg") === 0 ||
+        img.indexOf("data:image/jpg") === 0;
+
+    try{
+      const blob = await fetch(img).then(r => r.blob());
+
+      if(isJpeg){
+        // Only downscale if it’s actually bigger than THUMB
+        const bm = await createImageBitmap(blob);
+        const maxSide = Math.max(bm.width, bm.height);
+
+        if(maxSide <= THUMB){
+          skipped++;
+          continue;
+        }
+
+        const file = new File([blob], "image.jpg", { type: "image/jpeg" });
+        p.img = await imgToJpg(file);
+        downscaled++;
+      }else{
+        // Convert non-JPEG to JPEG thumb (also downscales)
+        const file = new File([blob], "image", { type: blob.type || "image/png" });
+        p.img = await imgToJpg(file);
+        converted++;
+      }
+    }catch(err){
+      console.warn("Optimize image failed", (p && p.id) ? p.id : "(no id)", err);
+      failed++;
+    }
+
+    if(k % 5 === 0){
+      updateStatus(`Optimizing images… ${k+1}/${lib.length}`);
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  if((converted + downscaled) > 0) setDirty(true);
+
+  if(!libraryMeta) libraryMeta = {};
+  libraryMeta.imagesOptimized = true;
+
+  render();
+  updateOptimizeButtonVisibility();
+  updateStatus(`Converted ${converted} • Downscaled ${downscaled} • Skipped ${skipped} • Failed ${failed}`);
 }
 
 function render(){
@@ -279,13 +371,17 @@ async function openLibrary(){
   const text = await readTextFile(path);
   const obj = JSON.parse(text);
 
-  lib = parseLibraryJson(obj);
+  
+  libraryMeta = (obj && obj.meta) ? obj.meta : {};
+  libraryLoaded = true;
+lib = parseLibraryJson(obj);
   activePath = path;
   activeName = await basename(path);
   savedCount = lib.length;
   setDirty(false);
 
   render();
+  updateOptimizeButtonVisibility();
   updateStatus("Loaded Library");
 }
 
@@ -625,22 +721,17 @@ async function onImageChange(e) {
     return;
   }
 
-  const dataUrlPromise = new Promise((resolve) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result || ""));
-    r.readAsDataURL(file);
-  });
-
+  // Always store thumbnails as JPEG data URLs (512px max edge)
+  // We still read model/prompt metadata from the original file.
+  const thumbPromise = imgToJpg(file).catch(() => "");
   const modelPromise = extractModelNameFromFile(file).catch(() => "");
 
-  const results = await Promise.all([dataUrlPromise, modelPromise]);
-  const dataUrl = results[0];
-  const modelName = results[1];
+  const [thumbDataUrl, modelName] = await Promise.all([thumbPromise, modelPromise]);
 
   if (myToken !== imageLoadToken) return;
 
-  selectedImageDataUrl = dataUrl;
-  selectedModelName = modelName || "";
+  selectedImageDataUrl = String(thumbDataUrl || "");
+  selectedModelName = String(modelName || "");
 }
 document.getElementById("imageInput").addEventListener("change", onImageChange);
 
@@ -682,6 +773,7 @@ document.getElementById("addBtn").addEventListener("click", async ()=>{
 });
 document.getElementById("openBtn").addEventListener("click", openLibrary);
 document.getElementById("saveBtn").addEventListener("click", saveLibrary);
+  document.getElementById("optimizeBtn").addEventListener("click", optimizeLibraryImagesToThumbnails);
 document.getElementById("exportBtn").addEventListener("click", exportBackup);
 document.getElementById("importBtn").addEventListener("click", importBackup);
 
