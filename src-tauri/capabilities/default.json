@@ -5,14 +5,17 @@
     "main"
   ],
   "permissions": [
-  "dialog:default",
-  "dialog:allow-open",
-  "dialog:allow-save",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-confirm",
 
-  "fs:default",
-  "fs:read-all",
-  "fs:write-all",
+    "fs:default",
+    "fs:read-all",
+    "fs:write-all",
 
-  "core:path:default"
-]
+    "core:path:default",
+    "core:window:default",
+    "core:event:default"
+  ]
 }
