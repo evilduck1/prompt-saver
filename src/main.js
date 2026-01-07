@@ -1,6 +1,106 @@
+
+// ==== FORCE VISIBLE PROGRESS BAR (DEBUG SAFE) ====
+document.addEventListener("DOMContentLoaded", () => {
+  let progressWrap = document.createElement("div");
+  progressWrap.id = "progressWrap";
+  progressWrap.style.cssText = `
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 70%;
+    background: #0f0f0f;
+    border: 2px solid #ffffff;
+    border-radius: 10px;
+    padding: 10px;
+    z-index: 10000;
+    display: none;
+  `;
+
+  let progressText = document.createElement("div");
+  progressText.style.cssText = "color:#ffffff;font-size:13px;margin-bottom:6px;text-align:center";
+  progressText.textContent = "";
+
+  let progressBarOuter = document.createElement("div");
+  progressBarOuter.style.cssText = "width:100%;height:12px;background:#222;border-radius:8px;overflow:hidden";
+
+  let progressBarInner = document.createElement("div");
+  progressBarInner.style.cssText = "height:100%;width:0%;background:#3aa675;transition:width .3s";
+
+  progressBarOuter.appendChild(progressBarInner);
+  progressWrap.appendChild(progressText);
+  progressWrap.appendChild(progressBarOuter);
+  document.body.appendChild(progressWrap);
+
+  // expose helpers
+  window.startProgress = (label="Working…") => {
+    progressText.textContent = label;
+    progressBarInner.style.width = "0%";
+    progressWrap.style.display = "block";
+  };
+
+  window.updateProgress = (pct, label) => {
+    if(label) progressText.textContent = label;
+    progressBarInner.style.width = Math.max(0, Math.min(100, pct)) + "%";
+  };
+
+  window.endProgress = () => {
+    progressWrap.style.display = "none";
+  };
+});
+// ==== END FORCE PROGRESS BAR ====
+
+
+// ==== Progress Bar ====
+let progressWrap = document.createElement("div");
+progressWrap.id = "progressWrap";
+progressWrap.style.cssText = `
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  background: #111;
+  border: 1px solid #fff;
+  border-radius: 8px;
+  padding: 6px 10px;
+  z-index: 9999;
+  display: none;
+`;
+
+let progressText = document.createElement("div");
+progressText.style.cssText = "color:#fff;font-size:12px;margin-bottom:4px;text-align:center";
+
+let progressBarOuter = document.createElement("div");
+progressBarOuter.style.cssText = "width:100%;height:10px;background:#222;border-radius:6px;overflow:hidden";
+
+let progressBarInner = document.createElement("div");
+progressBarInner.style.cssText = "height:100%;width:0%;background:#3aa675;transition:width .2s";
+
+progressBarOuter.appendChild(progressBarInner);
+progressWrap.appendChild(progressText);
+progressWrap.appendChild(progressBarOuter);
+document.body.appendChild(progressWrap);
+
+window.startProgress = (label="Working…") => {
+  progressText.textContent = label;
+  progressBarInner.style.width = "0%";
+  progressWrap.style.display = "block";
+};
+
+window.updateProgress = (pct, label) => {
+  if(label) progressText.textContent = label;
+  progressBarInner.style.width = Math.max(0, Math.min(100, pct)) + "%";
+};
+
+window.endProgress = () => {
+  progressWrap.style.display = "none";
+};
+// ==== End Progress Bar ====
+
 let imageLoadToken = 0;
 import { open, save, confirm } from "@tauri-apps/plugin-dialog";
-import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { readTextFile, writeTextFile, readFile } from "@tauri-apps/plugin-fs";
 import { basename, dirname, extname, join } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -17,6 +117,8 @@ app.innerHTML = `
   --border2:rgba(255,255,255,.20);
   --btnbg:rgba(255,255,255,.06);
   --btnhover:rgba(255,255,255,.10);
+  --ui-muted: rgba(167,167,167,.65);
+  --ui-muted-strong: rgba(167,167,167,.90);
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,Arial,sans-serif;background:var(--bg);color:var(--text)}
@@ -34,11 +136,46 @@ body{margin:0;font-family:system-ui,Arial,sans-serif;background:var(--bg);color:
 h1{margin:0;font-size:44px}
 h2{margin:0;font-size:34px}
 .small{font-size:12px;color:var(--muted)}
-button{
-  padding:10px 16px;border-radius:14px;border:1px solid var(--border2);
-  background:var(--btnbg);color:var(--text);cursor:pointer
+/* UI tweak: add space between labels (red) and inputs (yellow) */
+.inputs .small{ margin-bottom:8px; }
+/* Right column layout: keep controls aligned and push folder button to bottom */
+.imageCol{
+  display:flex;
+  flex-direction:column;
+  align-self:stretch;
 }
-button:hover{background:var(--btnhover)}
+.fileRow{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.fileName{
+  opacity:.85;
+}
+.folderBtn{
+  margin-top:auto;   /* pushes to bottom of the column */
+  align-self:flex-start;
+}
+
+
+button{
+  padding:10px 16px;
+  border-radius:14px;
+  border:1px solid var(--ui-muted);
+  background:var(--btnbg);
+  color:var(--text);
+  cursor:pointer;
+}
+
+
+#addBtn{
+  font-size:18px;
+  padding:12px 20px;
+}
+button:hover{background:var(--btnhover);border-color:var(--ui-muted-strong)}
+button:active{transform:translateY(1px)}
+button:focus-visible{outline:none;border-color:var(--ui-muted-strong)}
 button:disabled{opacity:.55;cursor:not-allowed}
 .header{
   display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;margin-bottom:18px
@@ -48,15 +185,25 @@ button:disabled{opacity:.55;cursor:not-allowed}
   display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:18px
 }
 textarea{
-  width:100%;min-height:140px;padding:12px;border-radius:14px;
-  border:1px solid var(--border2);background:rgba(255,255,255,.04);color:var(--text)
+  width:100%;
+  min-height:140px;
+  box-sizing:border-box;
+  padding:14px 16px;
+  border-radius:14px;
+  border:1px solid var(--ui-muted);
+  background:rgba(255,255,255,.04);
+  color:var(--text);
+  line-height:1.5;
 }
-.thumb{width:100%;max-height:360px;object-fit:contain;border-radius:14px;border:1px solid var(--border);background:#0003}
+textarea::placeholder{color:var(--ui-muted);opacity:1}
+textarea:focus{outline:none;border-color:var(--ui-muted-strong)}
+
+.thumb{width:100%;max-height:360px;object-fit:contain;border-radius:14px;border:1px solid #ffffff var(--border);background:#0003}
 .library-head{
   display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;margin:14px 0
 }
 .badge{
-  padding:8px 14px;border-radius:999px;border:1px solid var(--border2);
+  padding:8px 14px;border-radius:999px;border:1px solid #ffffff var(--border2);
   font-size:34px;line-height:1;
   visibility:hidden; /* keep layout stable */
   white-space:nowrap;
@@ -67,7 +214,7 @@ textarea{
 .list{display:grid;gap:16px}
 .card{
   display:grid;grid-template-columns:2fr 1.2fr;gap:16px;
-  padding:16px;border-radius:18px;background:var(--panel2);border:1px solid var(--border)
+  padding:16px;border-radius:18px;background:var(--panel2);border:1px solid #ffffff var(--border)
 }
 /* prevent subtle horizontal overflow */
 .card{min-width:0}
@@ -79,6 +226,7 @@ textarea{
 .prompt{
   white-space:pre-wrap;
   line-height:1.35;
+  color:var(--muted);
   margin-top:8px;
   max-height: 20.5em;
   overflow: hidden;
@@ -98,6 +246,52 @@ textarea{
   border-bottom: 1px solid rgba(255,255,255,.06);
 }
 .scrollArea{flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding-top:18px; overscroll-behavior:contain;}
+
+
+/* Right image pane + overlay delete */
+.rightpane{position:relative;display:flex;justify-content:center;align-items:center}
+.delbtn{
+  appearance:none;
+  border:1px solid #ffffff rgba(255,255,255,.18);
+  background:rgba(139,29,29,.35);
+  color:#f0f0f0;
+  padding:10px 14px;
+  border-radius:999px;
+  font-weight:800;
+  font-size:14px;
+  cursor:pointer;
+}
+.delbtn:hover{background:rgba(179,38,38,.45)}
+.delbtn:active{transform:translateY(1px)}
+
+
+/* Prompt header pills */
+.pillrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pill{
+  display:inline-flex;
+  align-items:center;
+  padding:8px 14px;
+  border-radius:999px;
+  background:rgba(255,255,255,.06);
+  border:1px solid #ffffff rgba(255,255,255,.16);
+  box-shadow:0 10px 24px rgba(0,0,0,.25);
+  font-weight:700;
+  font-size:16px;
+  color:#f0f0f0;
+}
+.copybtn{
+  appearance:none;
+  border:1px solid #ffffff rgba(255,255,255,.18);
+  background:rgba(255,255,255,.06);
+  color:#f0f0f0;
+  padding:10px 16px;
+  border-radius:999px;
+  font-weight:700;
+  font-size:14px;
+  cursor:pointer;
+}
+.copybtn:hover{background:rgba(255,255,255,.09)}
+.copybtn:active{transform:translateY(1px)}
 
 </style>
 
@@ -131,9 +325,15 @@ textarea{
     <div class="small">prompt input box</div>
     <textarea id="promptInput" placeholder="Type your prompt..."></textarea>
   </div>
-  <div>
+  <div class="imageCol">
     <div class="small">prompt image input box</div>
-    <input id="imageInput" type="file" accept="image/*"/>
+    <input id="imageInput" type="file" accept="image/*" style="display:none"/>
+    <div class="fileRow">
+      <button id="chooseFileBtn" type="button">Choose File</button>
+      <span id="fileName" class="small fileName">no file selected</span>
+    </div>
+
+    <button id="addFolderBtn" class="folderBtn" type="button" title="Select a folder and import every .png inside (including subfolders)">Choose Folder (Batch Add PNGs)</button>
     <!-- input preview removed (keep only file picker) -->
   </div>
 </div>
@@ -201,450 +401,328 @@ function updateOptimizeButtonVisibility(){
   const btn = document.getElementById("optimizeBtn");
   if(!btn) return;
 
-  // hidden until a library is loaded from disk
-  if(!libraryLoaded){
-    btn.style.display = "none";
-    return;
-  }
-
-  const optimized = !!(libraryMeta && libraryMeta.imagesOptimized);
-  btn.style.display = optimized ? "none" : "";
+  const anyPng = lib.some(p => typeof p.img === "string" && p.img.startsWith("data:image/png"));
+  btn.style.display = anyPng ? "" : "none";
 }
-
-function buildPayload(){
-  return {
-    app: "Prompt Saver",
-    version: "desktop-1.3.1",
-    exportedAt: new Date().toISOString(),
-    meta: libraryMeta,
-    Prompts: lib.map(p => ({ id:p.id, prompt:p.text, imageDataUrl:p.img, modelName: p.modelName || "" }))
-  };
-}
-
-async function imgToJpg(file){
-  const b = await createImageBitmap(file);
-  const s = Math.min(1, THUMB / Math.max(b.width, b.height));
-  const c = document.createElement("canvas");
-  c.width = Math.max(1, Math.round(b.width*s));
-  c.height = Math.max(1, Math.round(b.height*s));
-  c.getContext("2d").drawImage(b,0,0,c.width,c.height);
-  const blob = await new Promise(r=>c.toBlob(r,"image/jpeg",QUAL));
-  return await new Promise(r=>{ const fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(blob); });
-}
-
-async function optimizeLibraryImagesToThumbnails(){
-  if(!Array.isArray(lib) || lib.length === 0){
-    updateStatus("No prompts to optimize");
-    return;
-  }
-
-  const ok = await confirm(
-    "Optimize embedded images to 512px JPEG thumbnails?\n\n• PNG/WEBP/etc → converted to JPEG\n• JPEGs are kept unless larger than 512px (then they’re downscaled)\n\nTip: export a backup first.",
-    { title: "Optimize Images", kind: "warning" }
-  );
-  if(!ok) return;
-
-  let converted = 0;   // non-JPEG -> JPEG
-  let downscaled = 0;  // JPEG -> smaller JPEG
-  let skipped = 0;
-  let failed = 0;
-
-  for(let k = 0; k < lib.length; k++){
-    const p = lib[k];
-    const img = (p && p.img) ? String(p.img) : "";
-
-    if(!img || img.indexOf("data:image/") !== 0){
-      skipped++;
-      continue;
-    }
-
-      const isJpeg =
-        img.indexOf("data:image/jpeg") === 0 ||
-        img.indexOf("data:image/jpg") === 0;
-
-    try{
-      const blob = await fetch(img).then(r => r.blob());
-
-      if(isJpeg){
-        // Only downscale if it’s actually bigger than THUMB
-        const bm = await createImageBitmap(blob);
-        const maxSide = Math.max(bm.width, bm.height);
-
-        if(maxSide <= THUMB){
-          skipped++;
-          continue;
-        }
-
-        const file = new File([blob], "image.jpg", { type: "image/jpeg" });
-        p.img = await imgToJpg(file);
-        downscaled++;
-      }else{
-        // Convert non-JPEG to JPEG thumb (also downscales)
-        const file = new File([blob], "image", { type: blob.type || "image/png" });
-        p.img = await imgToJpg(file);
-        converted++;
-      }
-    }catch(err){
-      console.warn("Optimize image failed", (p && p.id) ? p.id : "(no id)", err);
-      failed++;
-    }
-
-    if(k % 5 === 0){
-      updateStatus(`Optimizing images… ${k+1}/${lib.length}`);
-      await new Promise(r => setTimeout(r, 0));
-    }
-  }
-
-  if((converted + downscaled) > 0) setDirty(true);
-
-  if(!libraryMeta) libraryMeta = {};
-  libraryMeta.imagesOptimized = true;
-
-  render();
-  updateOptimizeButtonVisibility();
-  updateStatus(`Converted ${converted} • Downscaled ${downscaled} • Skipped ${skipped} • Failed ${failed}`);
-}
-
-function render(){
-  const list = document.getElementById("list");
-  list.innerHTML = "";
-  updateStatus("Ready");
-  if(!lib.length) return;
-
-  lib.slice().reverse().forEach(p=>{
-    const c = document.createElement("div");
-    c.className = "card";
-    const n = combos(p.text);
-    const modelSuffix = p.modelName ? ` • ${escapeHtml(p.modelName)}` : "";
-    c.innerHTML = `
-      <div>
-        <div class="card-header">
-          <button type="button" data-a="copy">Copy prompt</button>
-          <div class="gen">Will Generate ${n} Image${n===1?"":"s"}${modelSuffix}</div>
-          <button type="button" data-a="del">Delete</button>
-        </div>
-        <div class="prompt"></div>
-      </div>
-      <div>${p.img ? `<img class="thumb" src="${p.img}" alt=""/>` : `<div class="small">No image</div>`}</div>
-    `;
-    c.querySelector(".prompt").textContent = p.text || "";
-
-    const delBtn = c.querySelector('[data-a="del"]');
-    const copyBtn = c.querySelector('[data-a="copy"]');
-
-    delBtn.addEventListener("click", async (e)=>{
-      e.preventDefault();
-      e.stopPropagation();
-      const ok = await confirm("Delete this prompt?", { title: "Prompt Saver", kind: "warning" });
-      if(!ok) return;
-      lib = lib.filter(x=>x.id!==p.id);
-      setDirty(true);
-      render();
-      updateStatus("Prompt deleted");
-    });
-
-    copyBtn.addEventListener("click", async (e)=>{
-      e.preventDefault();
-      e.stopPropagation();
-      try{ await navigator.clipboard.writeText(p.text||""); }catch{}
-      updateStatus("Copied prompt");
-    });
-
-    list.appendChild(c);
-  });
-}
-
 
 async function openLibrary(){
-  if(dirty){
-    const ok = await confirm("Discard Unsaved Changes?", { title: "Prompt Saver", kind: "warning" });
-    if(!ok) return;
-  }
-
-  const selected = await open({
-    multiple: false,
-    filters: [{ name: "Prompt Saver Library", extensions: ["json"] }]
+  const fp = await open({
+    multiple:false,
+    filters:[{name:"JSON", extensions:["json"]}]
   });
-  if(!selected) return;
-  const path = Array.isArray(selected) ? selected[0] : selected;
+  if(!fp) return;
+  await openLibraryFromPath(fp);
+}
 
-  const text = await readTextFile(path);
-  const obj = JSON.parse(text);
+async function openLibraryFromPath(fp){
+  if(typeof startProgress==="function") startProgress("Loading library…");
+  if(typeof updateProgress==="function") updateProgress(5, "Opening…");
+  try{
+    const txt = await readTextFile(fp);
+    if(typeof updateProgress==="function") updateProgress(35, "Reading file…");
+    const obj = JSON.parse(txt);
+    if(typeof updateProgress==="function") updateProgress(60, "Parsing library…");
+    lib = parseLibraryJson(obj);
+    if(typeof updateProgress==="function") updateProgress(80, "Building view…");
+    libraryMeta = obj && typeof obj === "object" && !Array.isArray(obj) ? obj : {};
+    libraryLoaded = true;
+    activePath = fp;
+    activeName = await basename(fp);
+    setDirty(false);
+    savedCount = lib.length;
+    render();
+    if(typeof updateProgress==="function") updateProgress(100, "Done");
+    if(typeof endProgress==="function") setTimeout(endProgress, 250);
+    updateOptimizeButtonVisibility();
+    updateStatus("Library loaded");
+  }catch(e){
+    if(typeof endProgress==="function") endProgress();
+    console.error(e);
+    alert("Failed to open library");
+  }
+}
 
-  
-  libraryMeta = (obj && obj.meta) ? obj.meta : {};
-  libraryLoaded = true;
-lib = parseLibraryJson(obj);
-  activePath = path;
-  activeName = await basename(path);
-  savedCount = lib.length;
-  setDirty(false);
-
-  render();
-  updateOptimizeButtonVisibility();
-  updateStatus("Loaded Library");
+async function openLastLibrary(){
+  try{
+    const last = await invoke("get_last_library_path");
+    if(last) await openLibraryFromPath(last);
+  }catch{}
 }
 
 async function saveLibrary(){
-  try {
-    const jsonText = JSON.stringify(buildPayload(), null, 2);
-
-    if(activePath){
-      await writeTextFile(activePath, jsonText);
-      savedCount = lib.length;
-      setDirty(false);
-      updateStatus("Library saved");
-      return;
+  try{
+    let fp = activePath;
+    if(!fp){
+      fp = await save({
+        filters:[{name:"JSON", extensions:["json"]}],
+        defaultPath:"prompt-saver-library.json"
+      });
+      if(!fp) return;
+      activePath = fp;
+      activeName = await basename(fp);
     }
-
-    const chosen = await save({
-      defaultPath: "prompt-saver-library.json",
-      filters: [{ name: "Prompt Saver Library", extensions: ["json"] }]
-    });
-    if(!chosen) return;
-
-    activePath = chosen;
-    activeName = await basename(chosen);
-
-    await writeTextFile(activePath, jsonText);
-    savedCount = lib.length;
+    const payload = {
+      ...libraryMeta,
+      Prompts: lib
+    };
+    await writeTextFile(fp, JSON.stringify(payload, null, 2));
     setDirty(false);
-    
+    savedCount = lib.length;
+    updateOptimizeButtonVisibility();
     updateStatus("Library saved");
-  } catch (err) {
-    console.error("Save failed:", err);
-    alert("Save failed:\n\n" + (err?.message || err));
-    updateStatus("Save failed");
+    try { await invoke("set_last_library_path", { path: fp }); } catch {}
+  }catch(e){
+    console.error(e);
+    alert("Failed to save library");
   }
+}
+
+function downloadJson(filename, obj){
+  const blob = new Blob([JSON.stringify(obj, null, 2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
 
 async function exportBackup(){
-  const payload = buildPayload();
-  const marker = `<!--PROMPT_SAVER_BACKUP:${btoa(unescape(encodeURIComponent(JSON.stringify(payload))))}-->`;
-  const doc = `<!doctype html><html><head><meta charset="utf-8"/><title>Prompt Saver Backup</title></head><body><h1>Prompt Saver Backup</h1>${marker}</body></html>`;
-
-  let defaultName = "prompt-saver-library.backup.html";
-  let defaultFolder = null;
-
-  if(activePath){
-    const name = await basename(activePath);
-    const ext = await extname(name);
-    const base = ext ? name.slice(0, -ext.length) : name;
-    defaultName = `${base}.backup.html`;
-    defaultFolder = await dirname(activePath);
+  // Exports current library as a backup JSON file (user chooses save location).
+  try{
+    const fp = await save({
+      filters:[{name:"JSON", extensions:["json"]}],
+      defaultPath:"prompt-saver-backup.json"
+    });
+    if(!fp) return;
+    const payload = { ...libraryMeta, Prompts: lib };
+    await writeTextFile(fp, JSON.stringify(payload, null, 2));
+    updateStatus("Backup exported");
+  }catch(e){
+    console.error(e);
+    alert("Failed to export backup");
   }
-
-  const defaultPath = defaultFolder ? await join(defaultFolder, defaultName) : defaultName;
-
-  const chosen = await save({
-    defaultPath,
-    filters: [{ name: "Prompt Saver Backup", extensions: ["html"] }]
-  });
-  if(!chosen) return;
-
-  await writeTextFile(chosen, doc);
-  updateStatus("Exported backup (no state changed)");
 }
 
 async function importBackup(){
-  const selected = await open({
-    multiple:false,
-    filters:[{ name:"Prompt Saver Backup", extensions:["html"] }]
+  // Imports prompts from a chosen backup JSON, merging into current library.
+  try{
+    const fp = await open({
+      multiple:false,
+      filters:[{name:"JSON", extensions:["json"]}]
+    });
+    if(!fp) return;
+    const txt = await readTextFile(fp);
+    const obj = JSON.parse(txt);
+    const incoming = parseLibraryJson(obj);
+
+    if(!incoming.length) return alert("No prompts found in that file.");
+
+    const ok = await confirm(`Import ${incoming.length} prompt(s) into the current library?`);
+    if(!ok) return;
+
+    // Merge (simple append)
+    lib.push(...incoming.map(p => ({
+      id: uid(),
+      text: p.text || "",
+      img: p.img || "",
+      modelName: p.modelName || ""
+    })));
+
+    setDirty(true);
+    render();
+    updateOptimizeButtonVisibility();
+    updateStatus("Backup imported");
+  }catch(e){
+    console.error(e);
+    alert("Failed to import backup");
+  }
+}
+
+// --- Image helpers
+function loadImageFromBlob(blob){
+  return new Promise((resolve,reject)=>{
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = ()=>{
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = (e)=>{
+      URL.revokeObjectURL(url);
+      reject(e);
+    };
+    img.src = url;
   });
-  if(!selected) return;
+}
 
-  const path = Array.isArray(selected) ? selected[0] : selected;
-  const text = await readTextFile(path);
-  const m = text.match(/<!--PROMPT_SAVER_BACKUP:([A-Za-z0-9+/=]+)-->/);
-  if(!m) return alert("Invalid backup file.");
+async function imgToJpg(file){
+  const blob = file instanceof Blob ? file : new Blob([file], {type:"application/octet-stream"});
+  const img = await loadImageFromBlob(blob);
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
 
-  const payload = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
-  const imported = parseLibraryJson(payload);
+  const scale = Math.min(1, THUMB / Math.max(w,h));
+  const cw = Math.max(1, Math.round(w*scale));
+  const ch = Math.max(1, Math.round(h*scale));
 
-  const replace = await confirm(`Found ${imported.length} prompts in backup.\n\nOK = Replace current prompts\nCancel = Merge`, { title: "Prompt Saver", kind: "info" });
-  if(replace){
-    lib = imported;
-  }else{
-    const seen = new Set(lib.map(p=>p.text+"||"+p.img));
-    for(const p of imported){
-      const k = p.text+"||"+p.img;
-      if(seen.has(k)) continue;
-      lib.push({ id:uid(), text:p.text, img:p.img });
-      seen.add(k);
-    }
+  const canvas = document.createElement("canvas");
+  canvas.width = cw; canvas.height = ch;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, cw, ch);
+
+  return canvas.toDataURL("image/jpeg", QUAL);
+}
+
+// --- Minimal PNG text chunk parser (tEXt / iTXt) for prompt + model extraction
+function u32be(view, off){
+  return view.getUint32(off, false);
+}
+function bytesToString(bytes){
+  // Latin-1-ish decode for chunk payload; safe for JSON text metadata and standard chunks.
+  let s = "";
+  for(let i=0;i<bytes.length;i++) s += String.fromCharCode(bytes[i]);
+  return s;
+}
+function tryDecodeUTF8(bytes){
+  try{
+    return new TextDecoder("utf-8", {fatal:false}).decode(bytes);
+  }catch{
+    return bytesToString(bytes);
   }
-  setDirty(true);
-
-  render();
-  updateStatus("Imported backup");
 }
-
-
-function escapeHtml(s){
-  return String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-async function inflateDeflateBytes(u8){
-  if (typeof DecompressionStream !== "undefined") {
-    const ds = new DecompressionStream("deflate");
-    const decompressedStream = new Blob([u8]).stream().pipeThrough(ds);
-    const ab = await new Response(decompressedStream).arrayBuffer();
-    return new Uint8Array(ab);
-  }
-  return null;
-}
-
-function u8ToText(u8){
-  return new TextDecoder("utf-8", { fatal:false }).decode(u8);
-}
-
 async function parsePngTextChunks(file){
-  const ab = await file.arrayBuffer();
-  const u8 = new Uint8Array(ab);
+  const buf = await file.arrayBuffer();
+  const view = new DataView(buf);
+  const u8 = new Uint8Array(buf);
 
+  // PNG signature
   const sig = [137,80,78,71,13,10,26,10];
-  for (let i=0;i<sig.length;i++) if (u8[i] !== sig[i]) return {};
+  for(let i=0;i<8;i++) if(u8[i] !== sig[i]) return {};
 
-  const out = {};
   let off = 8;
+  const out = {};
 
-  const readU32 = (p)=> (u8[p]<<24) | (u8[p+1]<<16) | (u8[p+2]<<8) | (u8[p+3]);
-  while (off + 8 <= u8.length) {
-    const len = (readU32(off) >>> 0); off += 4;
-    const type = String.fromCharCode(u8[off],u8[off+1],u8[off+2],u8[off+3]); off += 4;
-    if (off + len > u8.length) break;
+  while(off + 8 <= u8.length){
+    const len = u32be(view, off); off += 4;
+    const type = bytesToString(u8.slice(off, off+4)); off += 4;
+
+    if(off + len + 4 > u8.length) break;
+
     const data = u8.slice(off, off+len);
     off += len;
-    off += 4; // CRC
+    off += 4; // crc
 
-    if (type === "tEXt") {
-      const nul = data.indexOf(0);
-      if (nul > 0) {
-        const key = u8ToText(data.slice(0, nul));
-        const val = u8ToText(data.slice(nul+1));
+    if(type === "tEXt"){
+      const idx = data.indexOf(0);
+      if(idx > 0){
+        const key = bytesToString(data.slice(0, idx));
+        const val = bytesToString(data.slice(idx+1));
         out[key] = val;
       }
-    } else if (type === "iTXt") {
+    } else if(type === "iTXt"){
+      // iTXt: keyword\0 compression_flag compression_method language_tag\0 translated_keyword\0 text
       let p = 0;
-      const nul1 = data.indexOf(0, p);
-      if (nul1 <= 0) continue;
-      const key = u8ToText(data.slice(0, nul1));
-      p = nul1 + 1;
-      const compFlag = data[p]; p += 1;
-      p += 1; // compMethod
-      const nulLang = data.indexOf(0, p); if (nulLang < 0) continue;
-      p = nulLang + 1;
-      const nulTrans = data.indexOf(0, p); if (nulTrans < 0) continue;
-      p = nulTrans + 1;
-      let textBytes = data.slice(p);
+      const z0 = data.indexOf(0, p); if(z0 < 0) continue;
+      const key = bytesToString(data.slice(p, z0)); p = z0 + 1;
+      const compressionFlag = data[p++]; // 0/1
+      const compressionMethod = data[p++]; // 0
+      const z1 = data.indexOf(0, p); if(z1 < 0) continue;
+      const languageTag = bytesToString(data.slice(p, z1)); p = z1 + 1;
+      const z2 = data.indexOf(0, p); if(z2 < 0) continue;
+      const translatedKeyword = bytesToString(data.slice(p, z2)); p = z2 + 1;
+      const textBytes = data.slice(p);
 
-      if (compFlag === 1) {
-        const inflated = await inflateDeflateBytes(textBytes);
-        if (!inflated) continue;
-        textBytes = inflated;
+      // Many tools store uncompressed UTF-8 here; if compressed, we skip (keep best-effort simple).
+      let val = "";
+      if(compressionFlag === 0){
+        val = tryDecodeUTF8(textBytes);
+      } else {
+        // compressed — ignore in this minimal parser
+        val = "";
       }
-      out[key] = u8ToText(textBytes);
-    } else if (type === "zTXt") {
-      const nul = data.indexOf(0);
-      if (nul <= 0 || nul+2 > data.length) continue;
-      const key = u8ToText(data.slice(0, nul));
-      const compBytes = data.slice(nul+2);
-      const inflated = await inflateDeflateBytes(compBytes);
-      if (!inflated) continue;
-      out[key] = u8ToText(inflated);
+      out[key] = val;
     }
+
+    if(type === "IEND") break;
   }
+
   return out;
 }
 
-function deepFindModelName(obj){
-  const stack = [obj];
-  const seen = new Set();
-  while (stack.length) {
-    const cur = stack.pop();
-    if (!cur || typeof cur !== "object") continue;
-    if (seen.has(cur)) continue;
-    seen.add(cur);
-
-    for (const [k,v] of Object.entries(cur)) {
-      const key = String(k).toLowerCase();
-      if (key === "ckpt_name" || key === "checkpoint" || key === "model" || key === "model_name") {
-        if (typeof v === "string" && v.trim()) return v.trim();
-      }
-      if (v && typeof v === "object") stack.push(v);
+function deepFindPrompt(obj, depth=0){
+  if(depth > 8 || obj == null) return "";
+  if(typeof obj === "string") return "";
+  if(Array.isArray(obj)){
+    for(const it of obj){
+      const found = deepFindPrompt(it, depth+1);
+      if(found) return found;
+    }
+    return "";
+  }
+  if(typeof obj === "object"){
+    // Common keys
+    for(const k of ["prompt", "positive_prompt", "positive", "text", "prompt_text"]){
+      if(typeof obj[k] === "string" && obj[k].trim()) return obj[k].trim();
+    }
+    // Node graphs sometimes store in nested "inputs"
+    if(obj.inputs && typeof obj.inputs === "object"){
+      const found = deepFindPrompt(obj.inputs, depth+1);
+      if(found) return found;
+    }
+    for(const k of Object.keys(obj)){
+      const found = deepFindPrompt(obj[k], depth+1);
+      if(found) return found;
     }
   }
   return "";
 }
 
 function extractModelNameFromTextChunks(chunks){
-  if (chunks.invokeai_metadata) {
-    try {
+  // A few common keys used by different UIs
+  const keys = [
+    "Model",
+    "model",
+    "sd_model_name",
+    "model_name",
+    "model_hash",
+    "checkpoint",
+    "Checkpoint",
+    "checkpoint_name",
+    "invokeai_model",
+  ];
+  for(const k of keys){
+    if(chunks[k] && String(chunks[k]).trim()) return String(chunks[k]).trim();
+  }
+
+  // A1111 stores "parameters" blob; model often appears as "Model:" or in "Model hash:" lines depending on extensions
+  if(chunks.parameters){
+    const t = String(chunks.parameters);
+    const m = t.match(/(?:^|\n)\s*Model:\s*([^\n]+)/i);
+    if(m && m[1]) return m[1].trim();
+    const m2 = t.match(/(?:^|\n)\s*Checkpoint:\s*([^\n]+)/i);
+    if(m2 && m2[1]) return m2[1].trim();
+  }
+
+  // InvokeAI: sometimes JSON in invokeai_metadata
+  if(chunks.invokeai_metadata){
+    try{
       const meta = JSON.parse(chunks.invokeai_metadata);
-      const n = meta?.model?.name || meta?.model?.base || meta?.model?.key || "";
-      if (n) return String(n);
-    } catch {}
-  }
-
-  if (chunks.parameters) {
-    const m = chunks.parameters.match(/(?:^|[\n,])\s*Model:\s*([^,\n]+)/i);
-    if (m && m[1]) return m[1].trim();
-  }
-
-  if (chunks.prompt) {
-    try {
-      const j = JSON.parse(chunks.prompt);
-      const name = deepFindModelName(j);
-      if (name) return name;
-    } catch {}
-  }
-  if (chunks.workflow) {
-    try {
-      const j = JSON.parse(chunks.workflow);
-      const name = deepFindModelName(j);
-      if (name) return name;
-    } catch {}
+      const direct = meta?.model?.name || meta?.model_name || meta?.model;
+      if(typeof direct === "string" && direct.trim()) return direct.trim();
+    }catch{}
   }
 
   return "";
 }
 
 async function extractModelNameFromFile(file){
-  if (!file) return "";
+  if(!file) return "";
   const isPng = (file.type === "image/png") || (file.name && file.name.toLowerCase().endsWith(".png"));
-  if (!isPng) return "";
+  if(!isPng) return "";
   const chunks = await parsePngTextChunks(file);
   return extractModelNameFromTextChunks(chunks);
-}
-
-function deepFindPrompt(obj){
-  const stack = [obj];
-  const seen = new Set();
-  while (stack.length) {
-    const cur = stack.pop();
-    if (!cur || typeof cur !== "object") continue;
-    if (seen.has(cur)) continue;
-    seen.add(cur);
-
-    for (const [k,v] of Object.entries(cur)) {
-      const key = String(k).toLowerCase();
-
-      // Strong signals
-      if ((key === "positive_prompt" || key === "positive" || key === "prompt") && typeof v === "string" && v.trim()) {
-        const val = v.trim();
-        if (!/^negative\b/i.test(val)) return val;
-      }
-
-      // Weaker signal: "text" is used a lot; accept only if it looks like a prompt
-      if (key === "text" && typeof v === "string") {
-        const val = v.trim();
-        if (val.length >= 25 && !val.toLowerCase().startsWith("negative prompt")) return val;
-      }
-
-      if (v && typeof v === "object") stack.push(v);
-    }
-  }
-  return "";
 }
 
 function extractPromptFromParametersBlob(parametersText){
@@ -714,6 +792,9 @@ async function onImageChange(e) {
 
   selectedImageFile = file || null;
 
+  const fileNameEl = document.getElementById("fileName");
+  if (fileNameEl) fileNameEl.textContent = file ? (file.name || "selected") : "no file selected";
+
   selectedModelName = "";
   if (!file) {
     selectedImageDataUrl = "";
@@ -735,12 +816,117 @@ async function onImageChange(e) {
 }
 document.getElementById("imageInput").addEventListener("change", onImageChange);
 
+// Make the file picker look like the rest of the UI buttons
+document.getElementById("chooseFileBtn")?.addEventListener("click", () => {
+  document.getElementById("imageInput")?.click();
+});
+
+document.getElementById("addFolderBtn")?.addEventListener("click", batchAddPngFolder);
+
 function hardResetImageInput() {
   const oldInput = document.getElementById("imageInput");
   const newInput = oldInput.cloneNode(true);
   oldInput.replaceWith(newInput);
   newInput.addEventListener("change", onImageChange);
+  const fileNameEl = document.getElementById("fileName");
+  if (fileNameEl) fileNameEl.textContent = "no file selected";
 }
+
+async function fileFromPath(path){
+  // Read a file from disk (Tauri FS) and wrap it in a browser File object.
+  const bytes = await readFile(path);
+  const name = await basename(path);
+  const ext = (await extname(path)).toLowerCase();
+  const type =
+    ext === "png" ? "image/png" :
+    ext === "jpg" || ext === "jpeg" ? "image/jpeg" :
+    ext === "webp" ? "image/webp" :
+    "application/octet-stream";
+  return new File([bytes], name, { type });
+}
+
+function isPngPath(path){
+  return String(path || "").toLowerCase().endsWith(".png");
+}
+
+async function batchAddPngFolder(){
+  const folder = await open({ directory: true });
+  if (!folder) return;
+
+  let files = [];
+  try {
+    files = await invoke("collect_pngs_from_folder", { folderPath: folder });
+  } catch (err) {
+    console.error(err);
+    if (typeof endProgress === "function") endProgress();
+    return alert("Folder import failed. Make sure the Rust command \'collect_pngs_from_folder\' is added on the Tauri side.");
+  }
+
+  files = (Array.isArray(files) ? files : []).filter(isPngPath);
+
+  if (!files.length) return alert("No PNG files found in that folder.");
+
+  
+  // Progress
+  if (typeof startProgress === "function") startProgress("Importing PNGs…");
+  if (typeof updateProgress === "function") updateProgress(0, "Importing 0/" + files.length);
+const ok = await confirm(`Found ${files.length} PNG file(s). Add them all as new items?`);
+  if (!ok) return;
+
+  let added = 0;
+
+  for (let i = 0; i < files.length; i++){
+    const filePath = files[i];
+
+    try {
+      updateStatus(`Importing ${i+1}/${files.length}`);
+
+      const file = await fileFromPath(filePath);
+
+      // Always store thumbnails as JPEG data URLs (512px max edge)
+      const thumbPromise = imgToJpg(file).catch(() => "");
+      const modelPromise = extractModelNameFromFile(file).catch(() => "");
+      const promptPromise = extractPromptFromFile(file).catch(() => "");
+
+      const [thumbDataUrl, modelName, extractedPrompt] =
+        await Promise.all([thumbPromise, modelPromise, promptPromise]);
+
+      lib.push({
+        id: uid(),
+        text: String(extractedPrompt || "").trim(),
+        img: String(thumbDataUrl || ""),
+        modelName: String(modelName || "")
+      });
+
+      added++;
+
+      
+      if (typeof updateProgress === "function") {
+        const pct = Math.round(((i + 1) / files.length) * 100);
+        updateProgress(pct, `Importing ${i + 1}/${files.length}`);
+      }
+// Light UI refresh every 25 items (keeps app responsive)
+      if ((i+1) % 25 === 0){
+        render();
+      }
+    } catch (err) {
+      console.warn("Failed importing", filePath, err);
+    }
+  }
+
+  if (added > 0) {
+    setDirty(true);
+    render();
+    updateStatus(`Imported ${added} image(s)`);
+  } else {
+    updateStatus("Ready");
+    alert("No images were imported (all failed).");
+  }
+  if (typeof updateProgress === "function") updateProgress(100, `Imported ${added} PNG${added===1?"":"s"}`);
+  if (typeof endProgress === "function") setTimeout(endProgress, 250);
+
+}
+
 document.getElementById("addBtn").addEventListener("click", async ()=>{
   imageLoadToken++;
   let t = document.getElementById("promptInput").value.trim();
@@ -818,26 +1004,165 @@ document.addEventListener(
 
     // Allow right-click inside the prompt textarea only
     if (promptInput && promptInput.contains(e.target)) {
-      return;
+      return; // allow default context menu
     }
 
+    // Prevent right-click elsewhere
     e.preventDefault();
   },
   { capture: true }
 );
 
-// Block aux/right mouse button outside prompt input
-document.addEventListener(
-  "auxclick",
-  (e) => {
-    if (e.button !== 2) return;
 
-    const promptInput = document.getElementById("promptInput");
-    if (promptInput && promptInput.contains(e.target)) {
-      return;
+
+
+
+
+
+
+
+
+
+
+
+// ---------------------
+// Rendering + actions
+// ---------------------
+function escapeHtml(s){
+  return String(s||"")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function render(){
+  updateOptimizeButtonVisibility();
+
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+
+  // Update sticky status count based on last saved/loaded
+  updateStatus("Ready");
+
+  for(const p of lib.slice().reverse()){
+    const card = document.createElement("div");
+    card.className = "card";
+
+        card.style.border = "1px solid #ffffff";
+    card.style.boxSizing = "border-box";
+
+    const left = document.createElement("div");
+
+    const header = document.createElement("div");
+    header.className = "card-header";
+
+    const copy = document.createElement("button");
+    copy.className = "copybtn";
+    copy.textContent = "Copy prompt";
+    copy.addEventListener("click", async (e)=>{
+      e.stopPropagation();
+      const ok = await copyPromptToClipboard(p);
+      updateStatus(ok ? "Copied prompt" : "Copy failed");
+    });
+
+    const pillrow = document.createElement("div");
+    pillrow.className = "pillrow";
+
+    const gen = document.createElement("div");
+    gen.className = "pill";
+    const combosCount = combos(p.text);
+    gen.textContent = `Will Generate ${combosCount} Image${combosCount===1?"":"s"}`;
+    pillrow.appendChild(gen);
+
+    if(p.modelName){
+      const model = document.createElement("div");
+      model.className = "pill";
+      model.textContent = p.modelName;
+      pillrow.appendChild(model);
     }
 
-    e.preventDefault();
-  },
-  { capture: true }
-);
+    const del = document.createElement("button");
+    del.className = "delbtn";
+    del.textContent = "Delete";
+    del.addEventListener("click", async (e)=>{
+      e.stopPropagation();
+
+      // Confirm before deleting
+      const ok = await confirm("Delete this prompt?", {
+        title: "Confirm delete",
+        kind: "warning"
+      });
+      if(!ok) return;
+
+      const idx = lib.findIndex(x=>x.id===p.id);
+      if(idx>=0){
+        lib.splice(idx,1);
+        setDirty(true);
+        render();
+        updateStatus("Deleted");
+      }
+    });
+
+    header.appendChild(copy);
+    header.appendChild(pillrow);
+    header.appendChild(del);
+
+    const prompt = document.createElement("div");
+    prompt.className = "prompt";
+    prompt.textContent = p.text || "";
+
+    left.appendChild(header);
+    left.appendChild(prompt);
+
+    const right = document.createElement("div");
+    right.className = "rightpane";
+    right.appendChild(del);
+    if(p.img){
+      const img = document.createElement("img");
+      img.className = "thumb";
+      img.src = p.img;
+      right.appendChild(img);
+    }
+
+    card.appendChild(left);
+    card.appendChild(right);
+
+    list.appendChild(card);
+  }
+}
+
+// ---------------------
+// Image optimize utility
+// ---------------------
+async function optimizeLibraryImagesToThumbnails(){
+  // Converts any embedded PNG data URLs to 512px JPEG data URLs
+  // so the library file stays smaller and faster.
+  const ok = await confirm("Optimize: convert embedded PNGs to 512px JPEG thumbnails? This changes stored images (not prompts).");
+  if(!ok) return;
+
+  let changed = 0;
+
+  for(let i=0;i<lib.length;i++){
+    const p = lib[i];
+    if(typeof p.img === "string" && p.img.startsWith("data:image/png")){
+      try{
+        const blob = await (await fetch(p.img)).blob();
+        const jpg = await imgToJpg(blob);
+        if(jpg){
+          p.img = jpg;
+          changed++;
+        }
+      }catch{}
+    }
+  }
+
+  if(changed){
+    setDirty(true);
+    render();
+    updateStatus(`Optimized ${changed} image(s)`);
+  }else{
+    updateStatus("No PNGs to optimize");
+  }
+}
