@@ -1,4 +1,32 @@
 
+
+// ==== Clipboard Helper (robust) ====
+async function copyPromptToClipboard(p){
+  const text = (typeof p === "string") ? p : (p?.prompt || p?.text || "");
+  if(!text) return false;
+  try{
+    if(navigator.clipboard && window.isSecureContext){
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  }catch(e){}
+  try{
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }catch(e){
+    console.error("Clipboard copy failed", e);
+    return false;
+  }
+}
+// ==== End Clipboard Helper ====
 // ==== FORCE VISIBLE PROGRESS BAR (DEBUG SAFE) ====
 document.addEventListener("DOMContentLoaded", () => {
   let progressWrap = document.createElement("div");
@@ -131,7 +159,7 @@ body{margin:0;font-family:system-ui,Arial,sans-serif;background:var(--bg);color:
   position:absolute;left:-24px;right:-24px;bottom:0;height:1px;
   background:linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
 }
-.list{flex:1 1 auto;overflow:auto;padding-right:6px}
+.list{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding-right:6px;touch-action:pan-y}
 
 h1{margin:0;font-size:44px}
 h2{margin:0;font-size:34px}
