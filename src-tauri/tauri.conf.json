@@ -1,6 +1,6 @@
 {
   "productName": "Prompt Saver",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "identifier": "community.invoke.promptsaver",
   "build": {
     "beforeDevCommand": "npm run dev",

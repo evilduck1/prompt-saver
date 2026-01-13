@@ -1,6 +1,6 @@
 [package]
 name = "prompt-saver"
-version = "1.4.2"
+version = "1.4.3"
 description = "Prompt Saver"
 authors = ["Prompt Saver Community"]
 license = "MIT"
