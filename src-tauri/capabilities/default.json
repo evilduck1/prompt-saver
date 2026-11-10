@@ -16,6 +16,8 @@
 
     "core:path:default",
     "core:window:default",
+    "core:window:allow-destroy",
+    "core:window:allow-close",
     "core:event:default"
   ]
 }

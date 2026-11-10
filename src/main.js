@@ -132,6 +132,7 @@ import { readTextFile, writeTextFile, readFile } from "@tauri-apps/plugin-fs";
 import { basename, dirname, extname, join } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 
 const app = document.getElementById("app");
@@ -239,6 +240,7 @@ textarea:focus{outline:none;border-color:var(--ui-muted-strong)}
 .badge.is-on{ visibility:visible; }
 
 .controls{display:flex;gap:10px;flex-wrap:wrap;justify-self:end;align-items:center}
+#libSelect{padding:10px 14px;border-radius:14px;border:1px solid var(--ui-muted);background:#141414;color:var(--text);max-width:220px}
 .list{display:grid;gap:16px}
 .card{
   display:grid;grid-template-columns:2fr 1.2fr;gap:16px;
@@ -277,8 +279,9 @@ textarea:focus{outline:none;border-color:var(--ui-muted-strong)}
 
 
 /* Right image pane + overlay delete */
-.rightpane{position:relative;display:flex;justify-content:center;align-items:center}
+.rightpane{position:relative;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;padding-left:14px}
 .delbtn{
+  margin-left:10px;
   appearance:none;
   border:1px solid #ffffff rgba(255,255,255,.18);
   background:rgba(139,29,29,.35);
@@ -319,6 +322,8 @@ textarea:focus{outline:none;border-color:var(--ui-muted-strong)}
   cursor:pointer;
 }
 .copybtn:hover{background:rgba(255,255,255,.09)}
+.copybtn.copied{background:rgba(58,166,117,.30);border-color:#3aa675}
+
 .copybtn:active{transform:translateY(1px)}
 
 </style>
@@ -330,10 +335,12 @@ textarea:focus{outline:none;border-color:var(--ui-muted-strong)}
   <div id="status" class="small"></div>
   <div class="controls">
     <h2>Library</h2>
+    <select id="libSelect" title="Switch library"></select>
+    <button id="newLibBtn" type="button">New Library</button>
+    <button id="importLibBtn" type="button">Import Library</button>
     <button id="exportBtn" type="button">Export Backup</button>
     <button id="importBtn" type="button">Import Backup</button>
-    <button id="openBtn" type="button">Open Library</button>
-    <button id="saveBtn" type="button">Save Library</button>
+    <button id="saveBtn" type="button">Save</button>
     <button id="optimizeBtn" type="button" style="display:none" title="Convert embedded PNGs to 512px JPEG thumbnails">Optimize Images</button>
   </div>
 </div>
@@ -371,6 +378,17 @@ textarea:focus{outline:none;border-color:var(--ui-muted-strong)}
 
   <div id="list" class="list"></div>
 </div>
+  </div>
+</div>
+
+<div id="nameModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:20000;align-items:center;justify-content:center">
+  <div style="background:#141414;border:1px solid #444;border-radius:14px;padding:20px;width:360px">
+    <div class="small" style="margin-bottom:8px">New library name</div>
+    <input id="nameInput" style="width:100%;padding:10px;border-radius:10px;border:1px solid #555;background:#0d0d0d;color:#eee" />
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+      <button id="nameCancel" type="button">Cancel</button>
+      <button id="nameOk" type="button">Create</button>
+    </div>
   </div>
 </div>
 `;
@@ -437,9 +455,13 @@ function normalizeItems(arr){
     const id   = (p?.id ?? uid()).toString();
     const modelName = (p?.modelName ?? p?.model ?? p?.model_name ?? "").toString();
     const params = {
-      steps: numOrNull(p?.params?.steps),
-      cfg:   numOrNull(p?.params?.cfg),
-      shift: strOrNull(p?.params?.shift),
+      steps:     numOrNull(p?.params?.steps),
+      cfg:       numOrNull(p?.params?.cfg),
+      shift:     strOrNull(p?.params?.shift),
+      seed:      numOrNull(p?.params?.seed),
+      scheduler: strOrNull(p?.params?.scheduler),
+      width:     numOrNull(p?.params?.width),
+      height:    numOrNull(p?.params?.height),
     };
     return {id, text, img, modelName, params};
   }).filter(p => (p.text && p.text.trim()) || p.img);
@@ -472,7 +494,7 @@ async function openLibraryFromPath(fp){
   if(typeof startProgress==="function") startProgress("Loading library…");
   if(typeof updateProgress==="function") updateProgress(5, "Opening…");
   try{
-    const txt = await readTextFile(fp);
+    const txt = await invoke("read_library", { path: fp });
     if(typeof updateProgress==="function") updateProgress(35, "Reading file…");
     const obj = JSON.parse(txt);
     if(typeof updateProgress==="function") updateProgress(60, "Parsing library…");
@@ -481,7 +503,8 @@ async function openLibraryFromPath(fp){
     libraryMeta = obj && typeof obj === "object" && !Array.isArray(obj) ? obj : {};
     libraryLoaded = true;
     activePath = fp;
-    activeName = await basename(fp);
+    const parts = String(fp).split(/[\\/]/);
+    activeName = parts[parts.length - 1] || "Library";
     setDirty(false);
     savedCount = lib.length;
     render();
@@ -489,6 +512,8 @@ async function openLibraryFromPath(fp){
     if(typeof endProgress==="function") setTimeout(endProgress, 250);
     updateOptimizeButtonVisibility();
     updateStatus("Library loaded");
+    try { await invoke("set_last_library_path", { path: fp }); } catch {}
+    refreshLibraryList(fp);
   }catch(e){
     if(typeof endProgress==="function") endProgress();
     console.error(e);
@@ -496,35 +521,112 @@ async function openLibraryFromPath(fp){
   }
 }
 
+async function refreshLibraryList(selectPath){
+  const sel = document.getElementById("libSelect");
+  if(!sel) return;
+  try{
+    const list = await invoke("list_libraries");
+    sel.innerHTML = "";
+    for(const item of list){
+      const o = document.createElement("option");
+      o.value = item.path;
+      o.textContent = item.name;
+      if(item.path === (selectPath || activePath)) o.selected = true;
+      sel.appendChild(o);
+    }
+  }catch(e){ console.error(e); }
+}
+
+function askName(def="Library"){
+  return new Promise(resolve=>{
+    const m = document.getElementById("nameModal");
+    const i = document.getElementById("nameInput");
+    if(!m || !i) return resolve(def);
+    i.value = def;
+    m.style.display = "flex";
+    i.focus(); i.select();
+    const finish = v => {
+      m.style.display = "none";
+      document.getElementById("nameOk").removeEventListener("click", ok);
+      document.getElementById("nameCancel").removeEventListener("click", cancel);
+      i.removeEventListener("keydown", key);
+      resolve(v);
+    };
+    const ok = () => finish(i.value.trim() || "Library");
+    const cancel = () => finish(null);
+    const key = e => { if(e.key === "Enter") ok(); if(e.key === "Escape") cancel(); };
+    document.getElementById("nameOk").addEventListener("click", ok);
+    document.getElementById("nameCancel").addEventListener("click", cancel);
+    i.addEventListener("keydown", key);
+  });
+}
+
+async function newLibrary(){
+  if(dirty) await saveLibrary();
+  const name = await askName("Library");
+  if(!name) return;
+  try{
+    const p = await invoke("create_library", { name });
+    await openLibraryFromPath(p);
+  }catch(e){
+    console.error(e);
+    alert("Failed to create library");
+  }
+}
+
+async function importLibrary(){
+  try{
+    if(dirty) await saveLibrary();
+    const fp = await open({
+      multiple:false,
+      filters:[{name:"JSON", extensions:["json"]}]
+    });
+    if(!fp) return;
+    const dest = await invoke("import_library", { sourcePath: fp });
+    await openLibraryFromPath(dest);
+    updateStatus("Library imported");
+  }catch(e){
+    console.error(e);
+    alert("Failed to import library");
+  }
+}
+
+async function switchLibrary(path){
+  if(!path || path === activePath) return;
+  if(dirty) await saveLibrary();
+  await openLibraryFromPath(path);
+}
+
 async function openLastLibrary(){
   try{
     const last = await invoke("get_last_library_path");
-    if(last) await openLibraryFromPath(last);
+    if(last) return await openLibraryFromPath(last);
   }catch{}
+  try{
+    const list = await invoke("list_libraries");
+    if(list.length) return await openLibraryFromPath(list[0].path);
+    const p = await invoke("create_library", { name: "Library" });
+    await openLibraryFromPath(p);
+  }catch(e){ console.error(e); }
 }
 
 async function saveLibrary(){
   try{
     let fp = activePath;
     if(!fp){
-      fp = await save({
-        filters:[{name:"JSON", extensions:["json"]}],
-        defaultPath:"prompt-saver-library.json"
-      });
-      if(!fp) return;
+      fp = await invoke("create_library", { name: "Library" });
       activePath = fp;
-      activeName = await basename(fp);
+      const parts = String(fp).split(/[\\/]/);
+      activeName = parts[parts.length - 1] || "Library";
     }
-    const payload = {
-      ...libraryMeta,
-      Prompts: lib
-    };
-    await writeTextFile(fp, JSON.stringify(payload, null, 2));
+    const payload = { ...libraryMeta, Prompts: lib };
+    await invoke("write_library", { path: fp, contents: JSON.stringify(payload, null, 2) });
     setDirty(false);
     savedCount = lib.length;
     updateOptimizeButtonVisibility();
     updateStatus("Library saved");
     try { await invoke("set_last_library_path", { path: fp }); } catch {}
+    refreshLibraryList(fp);
   }catch(e){
     console.error(e);
     alert("Failed to save library");
@@ -773,7 +875,7 @@ function extractModelNameFromTextChunks(chunks){
 }
 
 function extractParamsFromTextChunks(chunks){
-  const out = {steps:null, cfg:null, shift:null};
+  const out = {steps:null, cfg:null, shift:null, seed:null, scheduler:null, width:null, height:null};
 
   out.steps = numOrNull(chunks.steps ?? chunks.Steps);
   out.cfg   = numOrNull(chunks.cfg_scale ?? chunks.cfg ?? chunks["CFG scale"]);
@@ -782,9 +884,13 @@ function extractParamsFromTextChunks(chunks){
   if(chunks.invokeai_metadata){
     try{
       const m = JSON.parse(chunks.invokeai_metadata);
-      out.steps ??= numOrNull(m.steps);
-      out.cfg   ??= numOrNull(m.cfg_scale);
-      out.shift ??= strOrNull(m.z_image_shift ?? m.shift);
+      out.steps     ??= numOrNull(m.steps);
+      out.cfg       ??= numOrNull(m.cfg_scale);
+      out.shift     ??= strOrNull(m.z_image_shift ?? m.shift);
+      out.seed      ??= numOrNull(m.seed);
+      out.scheduler ??= strOrNull(m.scheduler);
+      out.width     ??= numOrNull(m.width);
+      out.height    ??= numOrNull(m.height);
     }catch{}
   }
 
@@ -1061,7 +1167,9 @@ document.getElementById("addBtn").addEventListener("click", async ()=>{
   render();
   updateStatus(pulled ? "Prompt pulled from image" : "Prompt added");
 });
-document.getElementById("openBtn").addEventListener("click", openLibrary);
+document.getElementById("libSelect").addEventListener("change", (e)=> switchLibrary(e.target.value));
+document.getElementById("newLibBtn").addEventListener("click", newLibrary);
+document.getElementById("importLibBtn").addEventListener("click", importLibrary);
 document.getElementById("saveBtn").addEventListener("click", saveLibrary);
   document.getElementById("optimizeBtn").addEventListener("click", optimizeLibraryImagesToThumbnails);
 document.getElementById("exportBtn").addEventListener("click", exportBackup);
@@ -1070,15 +1178,6 @@ document.getElementById("importBtn").addEventListener("click", importBackup);
 
 // --- Tauri open-library / open-last-library wiring (auto, no clicks)
 (async () => {
-  try {
-    const pending = await invoke("take_pending_open");
-    if (pending?.type === "open-library" && pending.path) {
-      await openLibraryFromPath(pending.path);
-    } else if (pending?.type === "open-last-library") {
-      await openLastLibrary();
-    }
-  } catch {}
-
   await listen("open-library", async (event) => {
     if (event.payload) await openLibraryFromPath(event.payload);
   });
@@ -1086,13 +1185,24 @@ document.getElementById("importBtn").addEventListener("click", importBackup);
   await listen("open-last-library", async () => {
     await openLastLibrary();
   });
+
+  await openLastLibrary();
 })();
 
 // --- Auto-save on close (no prompts, no blocking)
-window.removeEventListener("beforeunload", () => {});
-window.addEventListener("beforeunload", () => {
+const mainWindow = getCurrentWindow();
+mainWindow.onCloseRequested(async (event) => {
   if (!dirty) return;
-  try { saveLibrary(); } catch (err) { console.warn("autosave failed", err); }
+  event.preventDefault();
+  const ok = await confirm("You have unsaved changes. Save before closing?", {
+    title: "Unsaved changes",
+    kind: "warning"
+  });
+  if (ok) {
+    await saveLibrary();
+    if (dirty) return;
+  }
+  await mainWindow.destroy();
 });
 
 render();
@@ -1169,6 +1279,15 @@ function render(){
       e.stopPropagation();
       const ok = await copyPromptToClipboard(p);
       updateStatus(ok ? "Copied prompt" : "Copy failed");
+      if(ok){
+        clearTimeout(copy._flash);
+        copy.textContent = "Copied";
+        copy.classList.add("copied");
+        copy._flash = setTimeout(()=>{
+          copy.textContent = "Copy prompt";
+          copy.classList.remove("copied");
+        }, 1200);
+      }
     });
 
     const pillrow = document.createElement("div");
@@ -1198,6 +1317,18 @@ function render(){
     if(p2.shift){
       const el = document.createElement("div"); el.className = "pill";
       el.textContent = `Shift ${p2.shift}`; pillrow.appendChild(el);
+    }
+    if(p2.seed != null){
+      const el = document.createElement("div"); el.className = "pill";
+      el.textContent = `Seed ${p2.seed}`; pillrow.appendChild(el);
+    }
+    if(p2.scheduler){
+      const el = document.createElement("div"); el.className = "pill";
+      el.textContent = `Scheduler ${p2.scheduler}`; pillrow.appendChild(el);
+    }
+    if(p2.width && p2.height){
+      const el = document.createElement("div"); el.className = "pill";
+      el.textContent = `Size ${p2.width} x ${p2.height}`; pillrow.appendChild(el);
     }
 
     const del = document.createElement("button");

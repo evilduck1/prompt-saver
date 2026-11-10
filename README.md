@@ -45,3 +45,11 @@ If you built the app yourself or downloaded it from the official project source,
 ### For developers
 
 To permanently remove this warning for end users, the application must be code-signed with a trusted Windows certificate or distributed via the Microsoft Store.
+
+## Why the interface is a web view
+
+Prompt Saver is built with Tauri, so the interface is drawn by the system web view rather than by native macOS or Windows widgets.
+
+That was deliberate. Native builds for two platforms drift apart fast — different spacing, different control sizes, different idioms — and you end up with an app that feels like two different apps. A web view keeps the layout identical on both, so the buttons are where you left them whichever machine you are on.
+
+The trade-off is that it does not inherit native look and feel. That is a conscious choice, not an oversight.
