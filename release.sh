@@ -45,7 +45,7 @@ FULL=$(printf '%s\n\n%s\n' "$NOTES" "$BODY")
 git add -A
 git commit -m "release: $TAG"
 git tag -a "$TAG" -m "$TAG"
-git push origin main --follow-tags
+git push origin refs/heads/main:refs/heads/main refs/tags/$TAG
 
 DMG=$(ls src-tauri/target/release/bundle/dmg/*"$NEW"*.dmg 2>/dev/null | head -1 || true)
 [[ -n "$DMG" ]] || DMG=$(ls src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)
