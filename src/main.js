@@ -387,6 +387,7 @@ let savedCount = 0; // sticky count: last saved/loaded library
 let selectedImageDataUrl = "";
 let selectedImageFile = null; // original File for metadata extraction
 let selectedModelName = ""; // extracted from uploaded PNG metadata (best-effort)
+let selectedImageParams = null;
 
 let activePath = null;
 let activeName = "No Library File Loaded";
@@ -408,6 +409,26 @@ function updateStatus(prefix="Ready"){
   const extra = dirty && current !== saved ? ` • Current: ${current}` : "";
   document.getElementById("status").textContent = `${prefix} • Prompts In Library: ${saved}${extra} • Library: ${activeName}`;
 }
+function numOrNull(v){
+  if(v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+function strOrNull(v){
+  if(v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s || null;
+}
+
+function findDenoiseNode(graph){
+  const nodes = graph?.nodes || {};
+  for(const key of Object.keys(nodes)){
+    const t = String(nodes[key]?.type || "");
+    if(t.endsWith("_denoise") || t === "denoise_latents") return nodes[key];
+  }
+  return null;
+}
+
 function normalizeItems(arr){
   if(!Array.isArray(arr)) return [];
   return arr.map(p=>{
@@ -415,7 +436,12 @@ function normalizeItems(arr){
     const img  = (p?.img ?? p?.imageDataUrl ?? p?.image ?? "").toString();
     const id   = (p?.id ?? uid()).toString();
     const modelName = (p?.modelName ?? p?.model ?? p?.model_name ?? "").toString();
-    return {id, text, img, modelName};
+    const params = {
+      steps: numOrNull(p?.params?.steps),
+      cfg:   numOrNull(p?.params?.cfg),
+      shift: strOrNull(p?.params?.shift),
+    };
+    return {id, text, img, modelName, params};
   }).filter(p => (p.text && p.text.trim()) || p.img);
 }
 function parseLibraryJson(obj){
@@ -555,7 +581,8 @@ async function importBackup(){
       id: uid(),
       text: p.text || "",
       img: p.img || "",
-      modelName: p.modelName || ""
+      modelName: p.modelName || "",
+      params: p.params || null
     })));
 
     setDirty(true);
@@ -745,6 +772,49 @@ function extractModelNameFromTextChunks(chunks){
   return "";
 }
 
+function extractParamsFromTextChunks(chunks){
+  const out = {steps:null, cfg:null, shift:null};
+
+  out.steps = numOrNull(chunks.steps ?? chunks.Steps);
+  out.cfg   = numOrNull(chunks.cfg_scale ?? chunks.cfg ?? chunks["CFG scale"]);
+  out.shift = strOrNull(chunks.shift ?? chunks.z_image_shift);
+
+  if(chunks.invokeai_metadata){
+    try{
+      const m = JSON.parse(chunks.invokeai_metadata);
+      out.steps ??= numOrNull(m.steps);
+      out.cfg   ??= numOrNull(m.cfg_scale);
+      out.shift ??= strOrNull(m.z_image_shift ?? m.shift);
+    }catch{}
+  }
+
+  if(chunks.invokeai_graph){
+    try{
+      const dn = findDenoiseNode(JSON.parse(chunks.invokeai_graph));
+      out.steps ??= numOrNull(dn?.steps);
+      out.cfg   ??= numOrNull(dn?.guidance_scale);
+      out.shift ??= strOrNull(dn?.shift);
+    }catch{}
+  }
+
+  if(chunks.parameters){
+    const t = String(chunks.parameters);
+    const s = t.match(/Steps:\s*(\d+)/i);        if(s) out.steps ??= numOrNull(s[1]);
+    const c = t.match(/CFG scale:\s*([\d.]+)/i); if(c) out.cfg   ??= numOrNull(c[1]);
+    const h = t.match(/Shift:\s*([^\n,]+)/i);    if(h) out.shift ??= strOrNull(h[1]);
+  }
+
+  return out;
+}
+
+async function extractParamsFromFile(file){
+  if(!file) return null;
+  const isPng = (file.type === "image/png") || (file.name || "").toLowerCase().endsWith(".png");
+  if(!isPng) return null;
+  const chunks = await parsePngTextChunks(file);
+  return extractParamsFromTextChunks(chunks);
+}
+
 async function extractModelNameFromFile(file){
   if(!file) return "";
   const isPng = (file.type === "image/png") || (file.name && file.name.toLowerCase().endsWith(".png"));
@@ -824,6 +894,7 @@ async function onImageChange(e) {
   if (fileNameEl) fileNameEl.textContent = file ? (file.name || "selected") : "no file selected";
 
   selectedModelName = "";
+  selectedImageParams = null;
   if (!file) {
     selectedImageDataUrl = "";
     selectedImageFile = null;
@@ -832,13 +903,15 @@ async function onImageChange(e) {
 
   // Always store thumbnails as JPEG data URLs (512px max edge)
   // We still read model/prompt metadata from the original file.
-  const thumbPromise = imgToJpg(file).catch(() => "");
-  const modelPromise = extractModelNameFromFile(file).catch(() => "");
+  const thumbPromise  = imgToJpg(file).catch(() => "");
+  const modelPromise  = extractModelNameFromFile(file).catch(() => "");
+  const paramsPromise = extractParamsFromFile(file).catch(() => null);
 
-  const [thumbDataUrl, modelName] = await Promise.all([thumbPromise, modelPromise]);
+  const [thumbDataUrl, modelName, params] = await Promise.all([thumbPromise, modelPromise, paramsPromise]);
 
   if (myToken !== imageLoadToken) return;
 
+  selectedImageParams = params || null;
   selectedImageDataUrl = String(thumbDataUrl || "");
   selectedModelName = String(modelName || "");
 }
@@ -912,18 +985,20 @@ const ok = await confirm(`Found ${files.length} PNG file(s). Add them all as new
       const file = await fileFromPath(filePath);
 
       // Always store thumbnails as JPEG data URLs (512px max edge)
-      const thumbPromise = imgToJpg(file).catch(() => "");
-      const modelPromise = extractModelNameFromFile(file).catch(() => "");
+      const thumbPromise  = imgToJpg(file).catch(() => "");
+      const modelPromise  = extractModelNameFromFile(file).catch(() => "");
       const promptPromise = extractPromptFromFile(file).catch(() => "");
+      const paramsPromise = extractParamsFromFile(file).catch(() => null);
 
-      const [thumbDataUrl, modelName, extractedPrompt] =
-        await Promise.all([thumbPromise, modelPromise, promptPromise]);
+      const [thumbDataUrl, modelName, extractedPrompt, params] =
+        await Promise.all([thumbPromise, modelPromise, promptPromise, paramsPromise]);
 
       lib.push({
         id: uid(),
         text: String(extractedPrompt || "").trim(),
         img: String(thumbDataUrl || ""),
-        modelName: String(modelName || "")
+        modelName: String(modelName || ""),
+        params: params || null
       });
 
       added++;
@@ -973,12 +1048,13 @@ document.getElementById("addBtn").addEventListener("click", async ()=>{
   }
 
   if(!t && !img) return alert("Nothing to add");
-  lib.push({ id:uid(), text:t, img, modelName });
+  lib.push({ id:uid(), text:t, img, modelName, params: selectedImageParams });
 
   document.getElementById("promptInput").value="";
   selectedImageDataUrl = "";
   selectedImageFile = null;
   selectedModelName = "";
+  selectedImageParams = null;
   hardResetImageInput();
   setDirty(true);
 
@@ -1109,6 +1185,19 @@ function render(){
       model.className = "pill";
       model.textContent = p.modelName;
       pillrow.appendChild(model);
+    }
+    const p2 = p.params || {};
+    if(p2.steps != null){
+      const el = document.createElement("div"); el.className = "pill";
+      el.textContent = `Steps ${p2.steps}`; pillrow.appendChild(el);
+    }
+    if(p2.cfg != null){
+      const el = document.createElement("div"); el.className = "pill";
+      el.textContent = `CFG ${p2.cfg}`; pillrow.appendChild(el);
+    }
+    if(p2.shift){
+      const el = document.createElement("div"); el.className = "pill";
+      el.textContent = `Shift ${p2.shift}`; pillrow.appendChild(el);
     }
 
     const del = document.createElement("button");
